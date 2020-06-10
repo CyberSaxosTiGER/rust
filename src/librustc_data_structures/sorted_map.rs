@@ -2,7 +2,11 @@ use std::borrow::Borrow;
 use std::cmp::Ordering;
 use std::iter::FromIterator;
 use std::mem;
-use std::ops::{RangeBounds, Bound, Index, IndexMut};
+use std::ops::{Bound, Index, IndexMut, RangeBounds};
+
+mod index_map;
+
+pub use index_map::SortedIndexMultiMap;
 
 /// `SortedMap` is a data structure with similar characteristics as BTreeMap but
 /// slightly different trade-offs: lookup, insertion, and removal are O(log(N))
@@ -12,18 +16,26 @@ use std::ops::{RangeBounds, Bound, Index, IndexMut};
 /// stores data in a more compact way. It also supports accessing contiguous
 /// ranges of elements as a slice, and slices of already sorted elements can be
 /// inserted efficiently.
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Debug, RustcEncodable,
-         RustcDecodable)]
+#[derive(
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Default,
+    Debug,
+    RustcEncodable,
+    RustcDecodable
+)]
 pub struct SortedMap<K: Ord, V> {
-    data: Vec<(K, V)>
+    data: Vec<(K, V)>,
 }
 
 impl<K: Ord, V> SortedMap<K, V> {
     #[inline]
     pub fn new() -> SortedMap<K, V> {
-        SortedMap {
-            data: vec![]
-        }
+        SortedMap { data: vec![] }
     }
 
     /// Construct a `SortedMap` from a presorted set of elements. This is faster
@@ -32,22 +44,17 @@ impl<K: Ord, V> SortedMap<K, V> {
     /// It is up to the caller to make sure that the elements are sorted by key
     /// and that there are no duplicates.
     #[inline]
-    pub fn from_presorted_elements(elements: Vec<(K, V)>) -> SortedMap<K, V>
-    {
+    pub fn from_presorted_elements(elements: Vec<(K, V)>) -> SortedMap<K, V> {
         debug_assert!(elements.windows(2).all(|w| w[0].0 < w[1].0));
 
-        SortedMap {
-            data: elements
-        }
+        SortedMap { data: elements }
     }
 
     #[inline]
     pub fn insert(&mut self, key: K, mut value: V) -> Option<V> {
         match self.lookup_index_for(&key) {
             Ok(index) => {
-                let slot = unsafe {
-                    self.data.get_unchecked_mut(index)
-                };
+                let slot = unsafe { self.data.get_unchecked_mut(index) };
                 mem::swap(&mut slot.1, &mut value);
                 Some(value)
             }
@@ -61,46 +68,32 @@ impl<K: Ord, V> SortedMap<K, V> {
     #[inline]
     pub fn remove(&mut self, key: &K) -> Option<V> {
         match self.lookup_index_for(key) {
-            Ok(index) => {
-                Some(self.data.remove(index).1)
-            }
-            Err(_) => {
-                None
-            }
+            Ok(index) => Some(self.data.remove(index).1),
+            Err(_) => None,
         }
     }
 
     #[inline]
     pub fn get<Q>(&self, key: &Q) -> Option<&V>
-        where K: Borrow<Q>,
-              Q: Ord + ?Sized
+    where
+        K: Borrow<Q>,
+        Q: Ord + ?Sized,
     {
         match self.lookup_index_for(key) {
-            Ok(index) => {
-                unsafe {
-                    Some(&self.data.get_unchecked(index).1)
-                }
-            }
-            Err(_) => {
-                None
-            }
+            Ok(index) => unsafe { Some(&self.data.get_unchecked(index).1) },
+            Err(_) => None,
         }
     }
 
     #[inline]
     pub fn get_mut<Q>(&mut self, key: &Q) -> Option<&mut V>
-        where K: Borrow<Q>,
-              Q: Ord + ?Sized
+    where
+        K: Borrow<Q>,
+        Q: Ord + ?Sized,
     {
         match self.lookup_index_for(key) {
-            Ok(index) => {
-                unsafe {
-                    Some(&mut self.data.get_unchecked_mut(index).1)
-                }
-            }
-            Err(_) => {
-                None
-            }
+            Ok(index) => unsafe { Some(&mut self.data.get_unchecked_mut(index).1) },
+            Err(_) => None,
         }
     }
 
@@ -117,13 +110,13 @@ impl<K: Ord, V> SortedMap<K, V> {
 
     /// Iterate over the keys, sorted
     #[inline]
-    pub fn keys(&self) -> impl Iterator<Item = &K> + ExactSizeIterator {
+    pub fn keys(&self) -> impl Iterator<Item = &K> + ExactSizeIterator + DoubleEndedIterator {
         self.data.iter().map(|&(ref k, _)| k)
     }
 
     /// Iterate over values, sorted by key
     #[inline]
-    pub fn values(&self) -> impl Iterator<Item = &V> + ExactSizeIterator {
+    pub fn values(&self) -> impl Iterator<Item = &V> + ExactSizeIterator + DoubleEndedIterator {
         self.data.iter().map(|&(_, ref v)| v)
     }
 
@@ -139,25 +132,28 @@ impl<K: Ord, V> SortedMap<K, V> {
 
     #[inline]
     pub fn range<R>(&self, range: R) -> &[(K, V)]
-        where R: RangeBounds<K>
+    where
+        R: RangeBounds<K>,
     {
         let (start, end) = self.range_slice_indices(range);
-        (&self.data[start .. end])
+        &self.data[start..end]
     }
 
     #[inline]
     pub fn remove_range<R>(&mut self, range: R)
-        where R: RangeBounds<K>
+    where
+        R: RangeBounds<K>,
     {
         let (start, end) = self.range_slice_indices(range);
-        self.data.splice(start .. end, ::std::iter::empty());
+        self.data.splice(start..end, ::std::iter::empty());
     }
 
     /// Mutate all keys with the given function `f`. This mutation must not
     /// change the sort-order of keys.
     #[inline]
     pub fn offset_keys<F>(&mut self, f: F)
-        where F: Fn(&mut K)
+    where
+        F: Fn(&mut K),
     {
         self.data.iter_mut().map(|&mut (ref mut k, _)| k).for_each(f);
     }
@@ -171,7 +167,7 @@ impl<K: Ord, V> SortedMap<K, V> {
     #[inline]
     pub fn insert_presorted(&mut self, mut elements: Vec<(K, V)>) {
         if elements.is_empty() {
-            return
+            return;
         }
 
         debug_assert!(elements.windows(2).all(|w| w[0].0 < w[1].0));
@@ -185,12 +181,11 @@ impl<K: Ord, V> SortedMap<K, V> {
                 drain
             }
             Err(index) => {
-                if index == self.data.len() ||
-                   elements.last().unwrap().0 < self.data[index].0 {
+                if index == self.data.len() || elements.last().unwrap().0 < self.data[index].0 {
                     // We can copy the whole range without having to mix with
                     // existing elements.
-                    self.data.splice(index .. index, elements.drain(..));
-                    return
+                    self.data.splice(index..index, elements.drain(..));
+                    return;
                 }
 
                 let mut drain = elements.drain(..);
@@ -208,43 +203,37 @@ impl<K: Ord, V> SortedMap<K, V> {
     /// Looks up the key in `self.data` via `slice::binary_search()`.
     #[inline(always)]
     fn lookup_index_for<Q>(&self, key: &Q) -> Result<usize, usize>
-        where K: Borrow<Q>,
-              Q: Ord + ?Sized
+    where
+        K: Borrow<Q>,
+        Q: Ord + ?Sized,
     {
         self.data.binary_search_by(|&(ref x, _)| x.borrow().cmp(key))
     }
 
     #[inline]
     fn range_slice_indices<R>(&self, range: R) -> (usize, usize)
-        where R: RangeBounds<K>
+    where
+        R: RangeBounds<K>,
     {
         let start = match range.start_bound() {
-            Bound::Included(ref k) => {
-                match self.lookup_index_for(k) {
-                    Ok(index) | Err(index) => index
-                }
-            }
-            Bound::Excluded(ref k) => {
-                match self.lookup_index_for(k) {
-                    Ok(index) => index + 1,
-                    Err(index) => index,
-                }
-            }
+            Bound::Included(ref k) => match self.lookup_index_for(k) {
+                Ok(index) | Err(index) => index,
+            },
+            Bound::Excluded(ref k) => match self.lookup_index_for(k) {
+                Ok(index) => index + 1,
+                Err(index) => index,
+            },
             Bound::Unbounded => 0,
         };
 
         let end = match range.end_bound() {
-            Bound::Included(ref k) => {
-                match self.lookup_index_for(k) {
-                    Ok(index) => index + 1,
-                    Err(index) => index,
-                }
-            }
-            Bound::Excluded(ref k) => {
-                match self.lookup_index_for(k) {
-                    Ok(index) | Err(index) => index,
-                }
-            }
+            Bound::Included(ref k) => match self.lookup_index_for(k) {
+                Ok(index) => index + 1,
+                Err(index) => index,
+            },
+            Bound::Excluded(ref k) => match self.lookup_index_for(k) {
+                Ok(index) | Err(index) => index,
+            },
             Bound::Unbounded => self.data.len(),
         };
 
@@ -253,8 +242,9 @@ impl<K: Ord, V> SortedMap<K, V> {
 
     #[inline]
     pub fn contains_key<Q>(&self, key: &Q) -> bool
-        where K: Borrow<Q>,
-              Q: Ord + ?Sized
+    where
+        K: Borrow<Q>,
+        Q: Ord + ?Sized,
     {
         self.get(key).is_some()
     }
@@ -270,8 +260,9 @@ impl<K: Ord, V> IntoIterator for SortedMap<K, V> {
 }
 
 impl<'a, K, Q, V> Index<&'a Q> for SortedMap<K, V>
-    where K: Ord + Borrow<Q>,
-          Q: Ord + ?Sized
+where
+    K: Ord + Borrow<Q>,
+    Q: Ord + ?Sized,
 {
     type Output = V;
 
@@ -281,8 +272,9 @@ impl<'a, K, Q, V> Index<&'a Q> for SortedMap<K, V>
 }
 
 impl<'a, K, Q, V> IndexMut<&'a Q> for SortedMap<K, V>
-    where K: Ord + Borrow<Q>,
-          Q: Ord + ?Sized
+where
+    K: Ord + Borrow<Q>,
+    Q: Ord + ?Sized,
 {
     fn index_mut(&mut self, key: &Q) -> &mut Self::Output {
         self.get_mut(key).expect("no entry found for key")
@@ -294,215 +286,11 @@ impl<K: Ord, V> FromIterator<(K, V)> for SortedMap<K, V> {
         let mut data: Vec<(K, V)> = iter.into_iter().collect();
 
         data.sort_unstable_by(|&(ref k1, _), &(ref k2, _)| k1.cmp(k2));
-        data.dedup_by(|&mut (ref k1, _), &mut (ref k2, _)| {
-            k1.cmp(k2) == Ordering::Equal
-        });
+        data.dedup_by(|&mut (ref k1, _), &mut (ref k2, _)| k1.cmp(k2) == Ordering::Equal);
 
-        SortedMap {
-            data
-        }
+        SortedMap { data }
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::SortedMap;
-
-    #[test]
-    fn test_insert_and_iter() {
-        let mut map = SortedMap::new();
-        let mut expected = Vec::new();
-
-        for x in 0 .. 100 {
-            assert_eq!(map.iter().cloned().collect::<Vec<_>>(), expected);
-
-            let x = 1000 - x * 2;
-            map.insert(x, x);
-            expected.insert(0, (x, x));
-        }
-    }
-
-    #[test]
-    fn test_get_and_index() {
-        let mut map = SortedMap::new();
-        let mut expected = Vec::new();
-
-        for x in 0 .. 100 {
-            let x = 1000 - x;
-            if x & 1 == 0 {
-                map.insert(x, x);
-            }
-            expected.push(x);
-        }
-
-        for mut x in expected {
-            if x & 1 == 0 {
-                assert_eq!(map.get(&x), Some(&x));
-                assert_eq!(map.get_mut(&x), Some(&mut x));
-                assert_eq!(map[&x], x);
-                assert_eq!(&mut map[&x], &mut x);
-            } else {
-                assert_eq!(map.get(&x), None);
-                assert_eq!(map.get_mut(&x), None);
-            }
-        }
-    }
-
-    #[test]
-    fn test_range() {
-        let mut map = SortedMap::new();
-        map.insert(1, 1);
-        map.insert(3, 3);
-        map.insert(6, 6);
-        map.insert(9, 9);
-
-        let keys = |s: &[(_, _)]| {
-            s.into_iter().map(|e| e.0).collect::<Vec<u32>>()
-        };
-
-        for start in 0 .. 11 {
-            for end in 0 .. 11 {
-                if end < start {
-                    continue
-                }
-
-                let mut expected = vec![1, 3, 6, 9];
-                expected.retain(|&x| x >= start && x < end);
-
-                assert_eq!(keys(map.range(start..end)), expected, "range = {}..{}", start, end);
-            }
-        }
-    }
-
-
-    #[test]
-    fn test_offset_keys() {
-        let mut map = SortedMap::new();
-        map.insert(1, 1);
-        map.insert(3, 3);
-        map.insert(6, 6);
-
-        map.offset_keys(|k| *k += 1);
-
-        let mut expected = SortedMap::new();
-        expected.insert(2, 1);
-        expected.insert(4, 3);
-        expected.insert(7, 6);
-
-        assert_eq!(map, expected);
-    }
-
-    fn keys(s: SortedMap<u32, u32>) -> Vec<u32> {
-        s.into_iter().map(|(k, _)| k).collect::<Vec<u32>>()
-    }
-
-    fn elements(s: SortedMap<u32, u32>) -> Vec<(u32, u32)> {
-        s.into_iter().collect::<Vec<(u32, u32)>>()
-    }
-
-    #[test]
-    fn test_remove_range() {
-        let mut map = SortedMap::new();
-        map.insert(1, 1);
-        map.insert(3, 3);
-        map.insert(6, 6);
-        map.insert(9, 9);
-
-        for start in 0 .. 11 {
-            for end in 0 .. 11 {
-                if end < start {
-                    continue
-                }
-
-                let mut expected = vec![1, 3, 6, 9];
-                expected.retain(|&x| x < start || x >= end);
-
-                let mut map = map.clone();
-                map.remove_range(start .. end);
-
-                assert_eq!(keys(map), expected, "range = {}..{}", start, end);
-            }
-        }
-    }
-
-    #[test]
-    fn test_remove() {
-        let mut map = SortedMap::new();
-        let mut expected = Vec::new();
-
-        for x in 0..10 {
-            map.insert(x, x);
-            expected.push((x, x));
-        }
-
-        for x in 0 .. 10 {
-            let mut map = map.clone();
-            let mut expected = expected.clone();
-
-            assert_eq!(map.remove(&x), Some(x));
-            expected.remove(x as usize);
-
-            assert_eq!(map.iter().cloned().collect::<Vec<_>>(), expected);
-        }
-    }
-
-    #[test]
-    fn test_insert_presorted_non_overlapping() {
-        let mut map = SortedMap::new();
-        map.insert(2, 0);
-        map.insert(8, 0);
-
-        map.insert_presorted(vec![(3, 0), (7, 0)]);
-
-        let expected = vec![2, 3, 7, 8];
-        assert_eq!(keys(map), expected);
-    }
-
-    #[test]
-    fn test_insert_presorted_first_elem_equal() {
-        let mut map = SortedMap::new();
-        map.insert(2, 2);
-        map.insert(8, 8);
-
-        map.insert_presorted(vec![(2, 0), (7, 7)]);
-
-        let expected = vec![(2, 0), (7, 7), (8, 8)];
-        assert_eq!(elements(map), expected);
-    }
-
-    #[test]
-    fn test_insert_presorted_last_elem_equal() {
-        let mut map = SortedMap::new();
-        map.insert(2, 2);
-        map.insert(8, 8);
-
-        map.insert_presorted(vec![(3, 3), (8, 0)]);
-
-        let expected = vec![(2, 2), (3, 3), (8, 0)];
-        assert_eq!(elements(map), expected);
-    }
-
-    #[test]
-    fn test_insert_presorted_shuffle() {
-        let mut map = SortedMap::new();
-        map.insert(2, 2);
-        map.insert(7, 7);
-
-        map.insert_presorted(vec![(1, 1), (3, 3), (8, 8)]);
-
-        let expected = vec![(1, 1), (2, 2), (3, 3), (7, 7), (8, 8)];
-        assert_eq!(elements(map), expected);
-    }
-
-    #[test]
-    fn test_insert_presorted_at_end() {
-        let mut map = SortedMap::new();
-        map.insert(1, 1);
-        map.insert(2, 2);
-
-        map.insert_presorted(vec![(3, 3), (8, 8)]);
-
-        let expected = vec![(1, 1), (2, 2), (3, 3), (8, 8)];
-        assert_eq!(elements(map), expected);
-    }
-}
+mod tests;

@@ -1,5 +1,4 @@
 use crate::spec::TargetOptions;
-use std::default::Default;
 
 pub fn opts() -> TargetOptions {
     TargetOptions {
@@ -8,7 +7,8 @@ pub fn opts() -> TargetOptions {
         has_rpath: true,
         target_family: Some("unix".to_string()),
         is_like_solaris: true,
+        limit_rdylib_exports: false, // Linker doesn't support this
 
-        .. Default::default()
+        ..Default::default()
     }
 }

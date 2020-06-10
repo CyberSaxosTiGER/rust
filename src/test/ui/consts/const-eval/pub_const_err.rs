@@ -1,4 +1,4 @@
-// compile-pass
+// check-pass
 #![warn(const_err)]
 
 #![crate_type = "lib"]

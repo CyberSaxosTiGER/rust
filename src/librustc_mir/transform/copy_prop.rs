@@ -19,38 +19,35 @@
 //! (non-mutating) use of `SRC`. These restrictions are conservative and may be relaxed in the
 //! future.
 
-use rustc::mir::{
-    Constant, Local, LocalKind, Location, Place, PlaceBase, Body, Operand, Rvalue, StatementKind
-};
-use rustc::mir::visit::MutVisitor;
-use rustc::ty::TyCtxt;
 use crate::transform::{MirPass, MirSource};
 use crate::util::def_use::DefUseAnalysis;
+use rustc_middle::mir::visit::MutVisitor;
+use rustc_middle::mir::{
+    Body, Constant, Local, LocalKind, Location, Operand, Place, Rvalue, StatementKind,
+};
+use rustc_middle::ty::TyCtxt;
 
 pub struct CopyPropagation;
 
-impl MirPass for CopyPropagation {
-    fn run_pass<'a, 'tcx>(&self,
-                          tcx: TyCtxt<'a, 'tcx, 'tcx>,
-                          _source: MirSource<'tcx>,
-                          mir: &mut Body<'tcx>) {
+impl<'tcx> MirPass<'tcx> for CopyPropagation {
+    fn run_pass(&self, tcx: TyCtxt<'tcx>, _source: MirSource<'tcx>, body: &mut Body<'tcx>) {
         // We only run when the MIR optimization level is > 1.
         // This avoids a slow pass, and messing up debug info.
         if tcx.sess.opts.debugging_opts.mir_opt_level <= 1 {
             return;
         }
 
-        let mut def_use_analysis = DefUseAnalysis::new(mir);
+        let mut def_use_analysis = DefUseAnalysis::new(body);
         loop {
-            def_use_analysis.analyze(mir);
+            def_use_analysis.analyze(body);
 
-            if eliminate_self_assignments(mir, &def_use_analysis) {
-                def_use_analysis.analyze(mir);
+            if eliminate_self_assignments(body, &def_use_analysis) {
+                def_use_analysis.analyze(body);
             }
 
             let mut changed = false;
-            for dest_local in mir.local_decls.indices() {
-                debug!("Considering destination local: {:?}", dest_local);
+            for dest_local in body.local_decls.indices() {
+                debug!("considering destination local: {:?}", dest_local);
 
                 let action;
                 let location;
@@ -59,102 +56,125 @@ impl MirPass for CopyPropagation {
                     let dest_use_info = def_use_analysis.local_info(dest_local);
                     let dest_def_count = dest_use_info.def_count_not_including_drop();
                     if dest_def_count == 0 {
-                        debug!("  Can't copy-propagate local: dest {:?} undefined",
-                               dest_local);
-                        continue
+                        debug!("  Can't copy-propagate local: dest {:?} undefined", dest_local);
+                        continue;
                     }
                     if dest_def_count > 1 {
-                        debug!("  Can't copy-propagate local: dest {:?} defined {} times",
-                               dest_local,
-                               dest_use_info.def_count());
-                        continue
+                        debug!(
+                            "  Can't copy-propagate local: dest {:?} defined {} times",
+                            dest_local,
+                            dest_use_info.def_count()
+                        );
+                        continue;
                     }
                     if dest_use_info.use_count() == 0 {
-                        debug!("  Can't copy-propagate local: dest {:?} unused",
-                               dest_local);
-                        continue
+                        debug!("  Can't copy-propagate local: dest {:?} unused", dest_local);
+                        continue;
                     }
                     // Conservatively gives up if the dest is an argument,
                     // because there may be uses of the original argument value.
-                    if mir.local_kind(dest_local) == LocalKind::Arg {
-                        debug!("  Can't copy-propagate local: dest {:?} (argument)",
-                            dest_local);
+                    // Also gives up on the return place, as we cannot propagate into its implicit
+                    // use by `return`.
+                    if matches!(
+                        body.local_kind(dest_local),
+                        LocalKind::Arg | LocalKind::ReturnPointer
+                    ) {
+                        debug!("  Can't copy-propagate local: dest {:?} (argument)", dest_local);
                         continue;
                     }
                     let dest_place_def = dest_use_info.defs_not_including_drop().next().unwrap();
                     location = dest_place_def.location;
 
-                    let basic_block = &mir[location.block];
+                    let basic_block = &body[location.block];
                     let statement_index = location.statement_index;
                     let statement = match basic_block.statements.get(statement_index) {
                         Some(statement) => statement,
                         None => {
                             debug!("  Can't copy-propagate local: used in terminator");
-                            continue
+                            continue;
                         }
                     };
 
                     // That use of the source must be an assignment.
-                    match statement.kind {
-                        StatementKind::Assign(
-                            Place::Base(PlaceBase::Local(local)),
-                            box Rvalue::Use(ref operand)
-                        ) if local == dest_local => {
-                            let maybe_action = match *operand {
-                                Operand::Copy(ref src_place) |
-                                Operand::Move(ref src_place) => {
-                                    Action::local_copy(&mir, &def_use_analysis, src_place)
+                    match &statement.kind {
+                        StatementKind::Assign(box (place, Rvalue::Use(operand))) => {
+                            if let Some(local) = place.as_local() {
+                                if local == dest_local {
+                                    let maybe_action = match operand {
+                                        Operand::Copy(src_place) | Operand::Move(src_place) => {
+                                            Action::local_copy(&body, &def_use_analysis, *src_place)
+                                        }
+                                        Operand::Constant(ref src_constant) => {
+                                            Action::constant(src_constant)
+                                        }
+                                    };
+                                    match maybe_action {
+                                        Some(this_action) => action = this_action,
+                                        None => continue,
+                                    }
+                                } else {
+                                    debug!(
+                                        "  Can't copy-propagate local: source use is not an \
+                                    assignment"
+                                    );
+                                    continue;
                                 }
-                                Operand::Constant(ref src_constant) => {
-                                    Action::constant(src_constant)
-                                }
-                            };
-                            match maybe_action {
-                                Some(this_action) => action = this_action,
-                                None => continue,
+                            } else {
+                                debug!(
+                                    "  Can't copy-propagate local: source use is not an \
+                                    assignment"
+                                );
+                                continue;
                             }
                         }
                         _ => {
-                            debug!("  Can't copy-propagate local: source use is not an \
-                                    assignment");
-                            continue
+                            debug!(
+                                "  Can't copy-propagate local: source use is not an \
+                                    assignment"
+                            );
+                            continue;
                         }
                     }
                 }
 
-                changed = action.perform(mir, &def_use_analysis, dest_local, location) || changed;
+                changed =
+                    action.perform(body, &def_use_analysis, dest_local, location, tcx) || changed;
                 // FIXME(pcwalton): Update the use-def chains to delete the instructions instead of
                 // regenerating the chains.
-                break
+                break;
             }
             if !changed {
-                break
+                break;
             }
         }
     }
 }
 
-fn eliminate_self_assignments(
-    mir: &mut Body<'_>,
-    def_use_analysis: &DefUseAnalysis,
-) -> bool {
+fn eliminate_self_assignments(body: &mut Body<'_>, def_use_analysis: &DefUseAnalysis) -> bool {
     let mut changed = false;
 
-    for dest_local in mir.local_decls.indices() {
+    for dest_local in body.local_decls.indices() {
         let dest_use_info = def_use_analysis.local_info(dest_local);
 
         for def in dest_use_info.defs_not_including_drop() {
             let location = def.location;
-            if let Some(stmt) = mir[location.block].statements.get(location.statement_index) {
-                match stmt.kind {
-                    StatementKind::Assign(
-                        Place::Base(PlaceBase::Local(local)),
-                        box Rvalue::Use(Operand::Copy(Place::Base(PlaceBase::Local(src_local)))),
-                    ) |
-                    StatementKind::Assign(
-                        Place::Base(PlaceBase::Local(local)),
-                        box Rvalue::Use(Operand::Move(Place::Base(PlaceBase::Local(src_local)))),
-                    ) if local == dest_local && dest_local == src_local => {}
+            if let Some(stmt) = body[location.block].statements.get(location.statement_index) {
+                match &stmt.kind {
+                    StatementKind::Assign(box (
+                        place,
+                        Rvalue::Use(Operand::Copy(src_place) | Operand::Move(src_place)),
+                    )) => {
+                        if let (Some(local), Some(src_local)) =
+                            (place.as_local(), src_place.as_local())
+                        {
+                            if local == dest_local && dest_local == src_local {
+                            } else {
+                                continue;
+                            }
+                        } else {
+                            continue;
+                        }
+                    }
                     _ => {
                         continue;
                     }
@@ -162,8 +182,8 @@ fn eliminate_self_assignments(
             } else {
                 continue;
             }
-            debug!("Deleting a self-assignment for {:?}", dest_local);
-            mir.make_statement_nop(location);
+            debug!("deleting a self-assignment for {:?}", dest_local);
+            body.make_statement_nop(location);
             changed = true;
         }
     }
@@ -177,10 +197,13 @@ enum Action<'tcx> {
 }
 
 impl<'tcx> Action<'tcx> {
-    fn local_copy(mir: &Body<'tcx>, def_use_analysis: &DefUseAnalysis, src_place: &Place<'tcx>)
-                  -> Option<Action<'tcx>> {
+    fn local_copy(
+        body: &Body<'tcx>,
+        def_use_analysis: &DefUseAnalysis,
+        src_place: Place<'tcx>,
+    ) -> Option<Action<'tcx>> {
         // The source must be a local.
-        let src_local = if let Place::Base(PlaceBase::Local(local)) = *src_place {
+        let src_local = if let Some(local) = src_place.as_local() {
             local
         } else {
             debug!("  Can't copy-propagate local: source is not a local");
@@ -193,11 +216,11 @@ impl<'tcx> Action<'tcx> {
         let src_use_count = src_use_info.use_count();
         if src_use_count == 0 {
             debug!("  Can't copy-propagate local: no uses");
-            return None
+            return None;
         }
         if src_use_count != 1 {
             debug!("  Can't copy-propagate local: {} uses", src_use_info.use_count());
-            return None
+            return None;
         }
 
         // Verify that the source doesn't change in between. This is done conservatively for now,
@@ -214,29 +237,31 @@ impl<'tcx> Action<'tcx> {
         //     USE(SRC);
         let src_def_count = src_use_info.def_count_not_including_drop();
         // allow function arguments to be propagated
-        let is_arg = mir.local_kind(src_local) == LocalKind::Arg;
+        let is_arg = body.local_kind(src_local) == LocalKind::Arg;
         if (is_arg && src_def_count != 0) || (!is_arg && src_def_count != 1) {
             debug!(
                 "  Can't copy-propagate local: {} defs of src{}",
                 src_def_count,
                 if is_arg { " (argument)" } else { "" },
             );
-            return None
+            return None;
         }
 
         Some(Action::PropagateLocalCopy(src_local))
     }
 
     fn constant(src_constant: &Constant<'tcx>) -> Option<Action<'tcx>> {
-        Some(Action::PropagateConstant((*src_constant).clone()))
+        Some(Action::PropagateConstant(*src_constant))
     }
 
-    fn perform(self,
-               mir: &mut Body<'tcx>,
-               def_use_analysis: &DefUseAnalysis,
-               dest_local: Local,
-               location: Location)
-               -> bool {
+    fn perform(
+        self,
+        body: &mut Body<'tcx>,
+        def_use_analysis: &DefUseAnalysis,
+        dest_local: Local,
+        location: Location,
+        tcx: TyCtxt<'tcx>,
+    ) -> bool {
         match self {
             Action::PropagateLocalCopy(src_local) => {
                 // Eliminate the destination and the assignment.
@@ -244,26 +269,24 @@ impl<'tcx> Action<'tcx> {
                 // First, remove all markers.
                 //
                 // FIXME(pcwalton): Don't do this. Merge live ranges instead.
-                debug!("  Replacing all uses of {:?} with {:?} (local)",
-                       dest_local,
-                       src_local);
+                debug!("  Replacing all uses of {:?} with {:?} (local)", dest_local, src_local);
                 for place_use in &def_use_analysis.local_info(dest_local).defs_and_uses {
                     if place_use.context.is_storage_marker() {
-                        mir.make_statement_nop(place_use.location)
+                        body.make_statement_nop(place_use.location)
                     }
                 }
                 for place_use in &def_use_analysis.local_info(src_local).defs_and_uses {
                     if place_use.context.is_storage_marker() {
-                        mir.make_statement_nop(place_use.location)
+                        body.make_statement_nop(place_use.location)
                     }
                 }
 
                 // Replace all uses of the destination local with the source local.
-                def_use_analysis.replace_all_defs_and_uses_with(dest_local, mir, src_local);
+                def_use_analysis.replace_all_defs_and_uses_with(dest_local, body, src_local, tcx);
 
                 // Finally, zap the now-useless assignment instruction.
                 debug!("  Deleting assignment");
-                mir.make_statement_nop(location);
+                body.make_statement_nop(location);
 
                 true
             }
@@ -271,21 +294,21 @@ impl<'tcx> Action<'tcx> {
                 // First, remove all markers.
                 //
                 // FIXME(pcwalton): Don't do this. Merge live ranges instead.
-                debug!("  Replacing all uses of {:?} with {:?} (constant)",
-                       dest_local,
-                       src_constant);
+                debug!(
+                    "  Replacing all uses of {:?} with {:?} (constant)",
+                    dest_local, src_constant
+                );
                 let dest_local_info = def_use_analysis.local_info(dest_local);
                 for place_use in &dest_local_info.defs_and_uses {
                     if place_use.context.is_storage_marker() {
-                        mir.make_statement_nop(place_use.location)
+                        body.make_statement_nop(place_use.location)
                     }
                 }
 
                 // Replace all uses of the destination local with the constant.
-                let mut visitor = ConstantPropagationVisitor::new(dest_local,
-                                                                  src_constant);
+                let mut visitor = ConstantPropagationVisitor::new(dest_local, src_constant, tcx);
                 for dest_place_use in &dest_local_info.defs_and_uses {
-                    visitor.visit_location(mir, dest_place_use.location)
+                    visitor.visit_location(body, dest_place_use.location)
                 }
 
                 // Zap the assignment instruction if we eliminated all the uses. We won't have been
@@ -293,18 +316,20 @@ impl<'tcx> Action<'tcx> {
                 // must have places on their LHS.
                 let use_count = dest_local_info.use_count();
                 if visitor.uses_replaced == use_count {
-                    debug!("  {} of {} use(s) replaced; deleting assignment",
-                           visitor.uses_replaced,
-                           use_count);
-                    mir.make_statement_nop(location);
+                    debug!(
+                        "  {} of {} use(s) replaced; deleting assignment",
+                        visitor.uses_replaced, use_count
+                    );
+                    body.make_statement_nop(location);
                     true
                 } else if visitor.uses_replaced == 0 {
                     debug!("  No uses replaced; not deleting assignment");
                     false
                 } else {
-                    debug!("  {} of {} use(s) replaced; not deleting assignment",
-                           visitor.uses_replaced,
-                           use_count);
+                    debug!(
+                        "  {} of {} use(s) replaced; not deleting assignment",
+                        visitor.uses_replaced, use_count
+                    );
                     true
                 }
             }
@@ -315,31 +340,43 @@ impl<'tcx> Action<'tcx> {
 struct ConstantPropagationVisitor<'tcx> {
     dest_local: Local,
     constant: Constant<'tcx>,
+    tcx: TyCtxt<'tcx>,
     uses_replaced: usize,
 }
 
 impl<'tcx> ConstantPropagationVisitor<'tcx> {
-    fn new(dest_local: Local, constant: Constant<'tcx>)
-           -> ConstantPropagationVisitor<'tcx> {
-        ConstantPropagationVisitor {
-            dest_local,
-            constant,
-            uses_replaced: 0,
-        }
+    fn new(
+        dest_local: Local,
+        constant: Constant<'tcx>,
+        tcx: TyCtxt<'tcx>,
+    ) -> ConstantPropagationVisitor<'tcx> {
+        ConstantPropagationVisitor { dest_local, constant, tcx, uses_replaced: 0 }
     }
 }
 
 impl<'tcx> MutVisitor<'tcx> for ConstantPropagationVisitor<'tcx> {
+    fn tcx(&self) -> TyCtxt<'tcx> {
+        self.tcx
+    }
+
     fn visit_operand(&mut self, operand: &mut Operand<'tcx>, location: Location) {
         self.super_operand(operand, location);
 
-        match *operand {
-            Operand::Copy(Place::Base(PlaceBase::Local(local))) |
-            Operand::Move(Place::Base(PlaceBase::Local(local))) if local == self.dest_local => {}
+        match operand {
+            Operand::Copy(place) | Operand::Move(place) => {
+                if let Some(local) = place.as_local() {
+                    if local == self.dest_local {
+                    } else {
+                        return;
+                    }
+                } else {
+                    return;
+                }
+            }
             _ => return,
         }
 
-        *operand = Operand::Constant(box self.constant.clone());
+        *operand = Operand::Constant(box self.constant);
         self.uses_replaced += 1
     }
 }

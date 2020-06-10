@@ -1,47 +1,38 @@
-use rustc::session::Session;
-
 use crate::generated_code;
-
-use std::cell::Cell;
-
-use syntax::parse::lexer::{self, StringReader};
-use syntax::parse::token::{self, Token};
-use syntax_pos::*;
+use rustc_ast::token::{self, TokenKind};
+use rustc_parse::lexer::{self, StringReader};
+use rustc_session::Session;
+use rustc_span::*;
 
 #[derive(Clone)]
 pub struct SpanUtils<'a> {
     pub sess: &'a Session,
-    // FIXME given that we clone SpanUtils all over the place, this err_count is
-    // probably useless and any logic relying on it is bogus.
-    pub err_count: Cell<isize>,
 }
 
 impl<'a> SpanUtils<'a> {
     pub fn new(sess: &'a Session) -> SpanUtils<'a> {
-        SpanUtils {
-            sess,
-            err_count: Cell::new(0),
-        }
+        SpanUtils { sess }
     }
 
     pub fn make_filename_string(&self, file: &SourceFile) -> String {
         match &file.name {
-            FileName::Real(path) if !file.name_was_remapped => {
+            FileName::Real(name) if !file.name_was_remapped => {
+                let path = name.local_path();
                 if path.is_absolute() {
-                    self.sess.source_map().path_mapping()
-                        .map_prefix(path.clone()).0
+                    self.sess
+                        .source_map()
+                        .path_mapping()
+                        .map_prefix(path.into())
+                        .0
                         .display()
                         .to_string()
                 } else {
-                    self.sess.working_dir.0
-                        .join(&path)
-                        .display()
-                        .to_string()
+                    self.sess.working_dir.0.join(&path).display().to_string()
                 }
-            },
+            }
             // If the file name is already remapped, we assume the user
             // configured it the way they wanted to, so use that directly
-            filename => filename.to_string()
+            filename => filename.to_string(),
         }
     }
 
@@ -56,15 +47,15 @@ impl<'a> SpanUtils<'a> {
         lexer::StringReader::retokenize(&self.sess.parse_sess, span)
     }
 
-    pub fn sub_span_of_token(&self, span: Span, tok: Token) -> Option<Span> {
+    pub fn sub_span_of_token(&self, span: Span, tok: TokenKind) -> Option<Span> {
         let mut toks = self.retokenise_span(span);
         loop {
-            let next = toks.real_token();
-            if next.tok == token::Eof {
+            let next = toks.next_token();
+            if next == token::Eof {
                 return None;
             }
-            if next.tok == tok {
-                return Some(next.sp);
+            if next == tok {
+                return Some(next.span);
             }
         }
     }
@@ -74,12 +65,12 @@ impl<'a> SpanUtils<'a> {
     //     let mut toks = self.retokenise_span(span);
     //     loop {
     //         let ts = toks.real_token();
-    //         if ts.tok == token::Eof {
+    //         if ts == token::Eof {
     //             return None;
     //         }
-    //         if ts.tok == token::Not {
+    //         if ts == token::Not {
     //             let ts = toks.real_token();
-    //             if ts.tok.is_ident() {
+    //             if ts.kind.is_ident() {
     //                 return Some(ts.sp);
     //             } else {
     //                 return None;
@@ -93,12 +84,12 @@ impl<'a> SpanUtils<'a> {
     //     let mut toks = self.retokenise_span(span);
     //     let mut prev = toks.real_token();
     //     loop {
-    //         if prev.tok == token::Eof {
+    //         if prev == token::Eof {
     //             return None;
     //         }
     //         let ts = toks.real_token();
-    //         if ts.tok == token::Not {
-    //             if prev.tok.is_ident() {
+    //         if ts == token::Not {
+    //             if prev.kind.is_ident() {
     //                 return Some(prev.sp);
     //             } else {
     //                 return None;
@@ -119,11 +110,7 @@ impl<'a> SpanUtils<'a> {
         }
 
         //If the span comes from a fake source_file, filter it.
-        !self.sess
-            .source_map()
-            .lookup_char_pos(span.lo())
-            .file
-            .is_real_file()
+        !self.sess.source_map().lookup_char_pos(span.lo()).file.is_real_file()
     }
 }
 

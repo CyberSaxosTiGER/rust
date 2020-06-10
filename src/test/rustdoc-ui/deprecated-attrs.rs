@@ -1,4 +1,4 @@
-// compile-pass
+// check-pass
 
 #![doc(no_default_passes, passes = "collapse-docs unindent-comments")]
 

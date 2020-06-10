@@ -1,4 +1,4 @@
-// compile-pass
+// check-pass
 
 struct S(pub &'static u32, pub u32);
 

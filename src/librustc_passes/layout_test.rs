@@ -1,51 +1,50 @@
-use rustc::hir;
-use rustc::hir::def_id::DefId;
-use rustc::hir::itemlikevisit::ItemLikeVisitor;
-use rustc::hir::ItemKind;
-use rustc::ty::layout::HasDataLayout;
-use rustc::ty::layout::HasTyCtxt;
-use rustc::ty::layout::LayoutOf;
-use rustc::ty::layout::TargetDataLayout;
-use rustc::ty::layout::TyLayout;
-use rustc::ty::layout::HasParamEnv;
-use rustc::ty::ParamEnv;
-use rustc::ty::Ty;
-use rustc::ty::TyCtxt;
-use syntax::ast::Attribute;
-use syntax::symbol::sym;
+use rustc_ast::ast::Attribute;
+use rustc_hir as hir;
+use rustc_hir::def_id::LocalDefId;
+use rustc_hir::itemlikevisit::ItemLikeVisitor;
+use rustc_hir::ItemKind;
+use rustc_middle::ty::layout::{HasParamEnv, HasTyCtxt, TyAndLayout};
+use rustc_middle::ty::{ParamEnv, Ty, TyCtxt};
+use rustc_span::symbol::sym;
+use rustc_target::abi::{HasDataLayout, LayoutOf, TargetDataLayout};
 
-pub fn test_layout<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>) {
+pub fn test_layout(tcx: TyCtxt<'_>) {
     if tcx.features().rustc_attrs {
         // if the `rustc_attrs` feature is not enabled, don't bother testing layout
-        tcx.hir()
-            .krate()
-            .visit_all_item_likes(&mut VarianceTest { tcx });
+        tcx.hir().krate().visit_all_item_likes(&mut LayoutTest { tcx });
     }
 }
 
-struct VarianceTest<'a, 'tcx: 'a> {
-    tcx: TyCtxt<'a, 'tcx, 'tcx>,
+struct LayoutTest<'tcx> {
+    tcx: TyCtxt<'tcx>,
 }
 
-impl<'a, 'tcx> ItemLikeVisitor<'tcx> for VarianceTest<'a, 'tcx> {
-    fn visit_item(&mut self, item: &'tcx hir::Item) {
-        let item_def_id = self.tcx.hir().local_def_id_from_hir_id(item.hir_id);
+impl ItemLikeVisitor<'tcx> for LayoutTest<'tcx> {
+    fn visit_item(&mut self, item: &'tcx hir::Item<'tcx>) {
+        let item_def_id = self.tcx.hir().local_def_id(item.hir_id);
 
-        if let ItemKind::Ty(..) = item.node {
-            for attr in self.tcx.get_attrs(item_def_id).iter() {
-                if attr.check_name(sym::rustc_layout) {
-                    self.dump_layout_of(item_def_id, item, attr);
+        match item.kind {
+            ItemKind::TyAlias(..)
+            | ItemKind::Enum(..)
+            | ItemKind::Struct(..)
+            | ItemKind::Union(..)
+            | ItemKind::OpaqueTy(..) => {
+                for attr in self.tcx.get_attrs(item_def_id.to_def_id()).iter() {
+                    if attr.check_name(sym::rustc_layout) {
+                        self.dump_layout_of(item_def_id, item, attr);
+                    }
                 }
             }
+            _ => {}
         }
     }
 
-    fn visit_trait_item(&mut self, _: &'tcx hir::TraitItem) {}
-    fn visit_impl_item(&mut self, _: &'tcx hir::ImplItem) {}
+    fn visit_trait_item(&mut self, _: &'tcx hir::TraitItem<'tcx>) {}
+    fn visit_impl_item(&mut self, _: &'tcx hir::ImplItem<'tcx>) {}
 }
 
-impl<'a, 'tcx> VarianceTest<'a, 'tcx> {
-    fn dump_layout_of(&self, item_def_id: DefId, item: &hir::Item, attr: &Attribute) {
+impl LayoutTest<'tcx> {
+    fn dump_layout_of(&self, item_def_id: LocalDefId, item: &hir::Item<'tcx>, attr: &Attribute) {
         let tcx = self.tcx;
         let param_env = self.tcx.param_env(item_def_id);
         let ty = self.tcx.type_of(item_def_id);
@@ -57,9 +56,7 @@ impl<'a, 'tcx> VarianceTest<'a, 'tcx> {
                 for meta_item in meta_items {
                     match meta_item.name_or_empty() {
                         sym::abi => {
-                            self.tcx
-                                .sess
-                                .span_err(item.span, &format!("abi: {:?}", ty_layout.abi));
+                            self.tcx.sess.span_err(item.span, &format!("abi: {:?}", ty_layout.abi));
                         }
 
                         sym::align => {
@@ -85,6 +82,13 @@ impl<'a, 'tcx> VarianceTest<'a, 'tcx> {
                             );
                         }
 
+                        sym::debug => {
+                            self.tcx.sess.span_err(
+                                item.span,
+                                &format!("layout_of({:?}) = {:#?}", ty, *ty_layout),
+                            );
+                        }
+
                         name => {
                             self.tcx.sess.span_err(
                                 meta_item.span(),
@@ -96,41 +100,39 @@ impl<'a, 'tcx> VarianceTest<'a, 'tcx> {
             }
 
             Err(layout_error) => {
-                self.tcx
-                    .sess
-                    .span_err(item.span, &format!("layout error: {:?}", layout_error));
+                self.tcx.sess.span_err(item.span, &format!("layout error: {:?}", layout_error));
             }
         }
     }
 }
 
-struct UnwrapLayoutCx<'me, 'tcx> {
-    tcx: TyCtxt<'me, 'tcx, 'tcx>,
+struct UnwrapLayoutCx<'tcx> {
+    tcx: TyCtxt<'tcx>,
     param_env: ParamEnv<'tcx>,
 }
 
-impl<'me, 'tcx> LayoutOf for UnwrapLayoutCx<'me, 'tcx> {
+impl LayoutOf for UnwrapLayoutCx<'tcx> {
     type Ty = Ty<'tcx>;
-    type TyLayout = TyLayout<'tcx>;
+    type TyAndLayout = TyAndLayout<'tcx>;
 
-    fn layout_of(&self, ty: Ty<'tcx>) -> Self::TyLayout {
+    fn layout_of(&self, ty: Ty<'tcx>) -> Self::TyAndLayout {
         self.tcx.layout_of(self.param_env.and(ty)).unwrap()
     }
 }
 
-impl<'me, 'tcx> HasTyCtxt<'tcx> for UnwrapLayoutCx<'me, 'tcx> {
-    fn tcx<'a>(&'a self) -> TyCtxt<'a, 'tcx, 'tcx> {
+impl HasTyCtxt<'tcx> for UnwrapLayoutCx<'tcx> {
+    fn tcx(&self) -> TyCtxt<'tcx> {
         self.tcx
     }
 }
 
-impl<'me, 'tcx> HasParamEnv<'tcx> for UnwrapLayoutCx<'me, 'tcx> {
+impl HasParamEnv<'tcx> for UnwrapLayoutCx<'tcx> {
     fn param_env(&self) -> ParamEnv<'tcx> {
         self.param_env
     }
 }
 
-impl<'me, 'tcx> HasDataLayout for UnwrapLayoutCx<'me, 'tcx> {
+impl HasDataLayout for UnwrapLayoutCx<'tcx> {
     fn data_layout(&self) -> &TargetDataLayout {
         self.tcx.data_layout()
     }

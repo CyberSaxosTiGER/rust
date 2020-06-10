@@ -1,4 +1,4 @@
-// compile-pass
+// check-pass
 // pretty-expanded FIXME #23616
 
 #![feature(fn_traits, unboxed_closures)]

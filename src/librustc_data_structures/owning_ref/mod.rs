@@ -10,7 +10,7 @@ This allows moving and dropping of a `OwningRef` without needing to recreate the
 This can sometimes be useful because Rust borrowing rules normally prevent
 moving a type that has been moved from. For example, this kind of code gets rejected:
 
-```rust,ignore
+```compile_fail,E0515
 fn return_owned_and_referenced<'a>() -> (Vec<u8>, &'a [u8]) {
     let v = vec![1, 2, 3, 4];
     let s = &v[1..3];
@@ -43,7 +43,8 @@ and preventing mutable access to root containers, which in practice requires hea
 as provided by `Box<T>`, `Rc<T>`, etc.
 
 Also provided are typedefs for common owner type combinations,
-which allow for less verbose type signatures. For example, `BoxRef<T>` instead of `OwningRef<Box<T>, T>`.
+which allow for less verbose type signatures.
+For example, `BoxRef<T>` instead of `OwningRef<Box<T>, T>`.
 
 The crate also provides the more advanced `OwningHandle` type,
 which allows more freedom in bundling a dependent handle object
@@ -243,8 +244,10 @@ fn main() {
 ```
 */
 
+pub use stable_deref_trait::{
+    CloneStableDeref as CloneStableAddress, StableDeref as StableAddress,
+};
 use std::mem;
-pub use stable_deref_trait::{StableDeref as StableAddress, CloneStableDeref as CloneStableAddress};
 
 /// An owning reference.
 ///
@@ -283,6 +286,7 @@ impl<T> Erased for T {}
 /// Helper trait for erasing the concrete type of what an owner dereferences to,
 /// for example `Box<T> -> Box<Erased>`. This would be unneeded with
 /// higher kinded types support in the language.
+#[allow(unused_lifetimes)]
 pub unsafe trait IntoErased<'a> {
     /// Owner with the dereference type substituted to `Erased`.
     type Erased;
@@ -293,6 +297,7 @@ pub unsafe trait IntoErased<'a> {
 /// Helper trait for erasing the concrete type of what an owner dereferences to,
 /// for example `Box<T> -> Box<Erased + Send>`. This would be unneeded with
 /// higher kinded types support in the language.
+#[allow(unused_lifetimes)]
 pub unsafe trait IntoErasedSend<'a> {
     /// Owner with the dereference type substituted to `Erased + Send`.
     type Erased: Send;
@@ -303,6 +308,7 @@ pub unsafe trait IntoErasedSend<'a> {
 /// Helper trait for erasing the concrete type of what an owner dereferences to,
 /// for example `Box<T> -> Box<Erased + Send + Sync>`. This would be unneeded with
 /// higher kinded types support in the language.
+#[allow(unused_lifetimes)]
 pub unsafe trait IntoErasedSendSync<'a> {
     /// Owner with the dereference type substituted to `Erased + Send + Sync`.
     type Erased: Send + Sync;
@@ -329,13 +335,11 @@ impl<O, T: ?Sized> OwningRef<O, T> {
     /// }
     /// ```
     pub fn new(o: O) -> Self
-        where O: StableAddress,
-              O: Deref<Target = T>,
+    where
+        O: StableAddress,
+        O: Deref<Target = T>,
     {
-        OwningRef {
-            reference: &*o,
-            owner: o,
-        }
+        OwningRef { reference: &*o, owner: o }
     }
 
     /// Like `new`, but doesn’t require `O` to implement the `StableAddress` trait.
@@ -344,12 +348,10 @@ impl<O, T: ?Sized> OwningRef<O, T> {
     /// This is useful for cases where coherence rules prevents implementing the trait
     /// without adding a dependency to this crate in a third-party library.
     pub unsafe fn new_assert_stable_address(o: O) -> Self
-        where O: Deref<Target = T>,
+    where
+        O: Deref<Target = T>,
     {
-        OwningRef {
-            reference: &*o,
-            owner: o,
-        }
+        OwningRef { reference: &*o, owner: o }
     }
 
     /// Converts `self` into a new owning reference that points at something reachable
@@ -373,13 +375,11 @@ impl<O, T: ?Sized> OwningRef<O, T> {
     /// }
     /// ```
     pub fn map<F, U: ?Sized>(self, f: F) -> OwningRef<O, U>
-        where O: StableAddress,
-              F: FnOnce(&T) -> &U
+    where
+        O: StableAddress,
+        F: FnOnce(&T) -> &U,
     {
-        OwningRef {
-            reference: f(&self),
-            owner: self.owner,
-        }
+        OwningRef { reference: f(&self), owner: self.owner }
     }
 
     /// Tries to convert `self` into a new owning reference that points
@@ -405,13 +405,11 @@ impl<O, T: ?Sized> OwningRef<O, T> {
     /// }
     /// ```
     pub fn try_map<F, U: ?Sized, E>(self, f: F) -> Result<OwningRef<O, U>, E>
-        where O: StableAddress,
-              F: FnOnce(&T) -> Result<&U, E>
+    where
+        O: StableAddress,
+        F: FnOnce(&T) -> Result<&U, E>,
     {
-        Ok(OwningRef {
-            reference: f(&self)?,
-            owner: self.owner,
-        })
+        Ok(OwningRef { reference: f(&self)?, owner: self.owner })
     }
 
     /// Converts `self` into a new owning reference with a different owner type.
@@ -420,14 +418,12 @@ impl<O, T: ?Sized> OwningRef<O, T> {
     /// so that the reference into it remains valid. This function is marked unsafe
     /// because the user needs to manually uphold this guarantee.
     pub unsafe fn map_owner<F, P>(self, f: F) -> OwningRef<P, T>
-        where O: StableAddress,
-              P: StableAddress,
-              F: FnOnce(O) -> P
+    where
+        O: StableAddress,
+        P: StableAddress,
+        F: FnOnce(O) -> P,
     {
-        OwningRef {
-            reference: self.reference,
-            owner: f(self.owner),
-        }
+        OwningRef { reference: self.reference, owner: f(self.owner) }
     }
 
     /// Converts `self` into a new owning reference where the owner is wrapped
@@ -436,10 +432,7 @@ impl<O, T: ?Sized> OwningRef<O, T> {
     /// This can be used to safely erase the owner of any `OwningRef<O, T>`
     /// to a `OwningRef<Box<Erased>, T>`.
     pub fn map_owner_box(self) -> OwningRef<Box<O>, T> {
-        OwningRef {
-            reference: self.reference,
-            owner: Box::new(self.owner),
-        }
+        OwningRef { reference: self.reference, owner: Box::new(self.owner) }
     }
 
     /// Erases the concrete base type of the owner with a trait object.
@@ -475,39 +468,34 @@ impl<O, T: ?Sized> OwningRef<O, T> {
     /// }
     /// ```
     pub fn erase_owner<'a>(self) -> OwningRef<O::Erased, T>
-        where O: IntoErased<'a>,
+    where
+        O: IntoErased<'a>,
     {
-        OwningRef {
-            reference: self.reference,
-            owner: self.owner.into_erased(),
-        }
+        OwningRef { reference: self.reference, owner: self.owner.into_erased() }
     }
 
     /// Erases the concrete base type of the owner with a trait object which implements `Send`.
     ///
     /// This allows mixing of owned references with different owner base types.
     pub fn erase_send_owner<'a>(self) -> OwningRef<O::Erased, T>
-        where O: IntoErasedSend<'a>,
+    where
+        O: IntoErasedSend<'a>,
     {
-        OwningRef {
-            reference: self.reference,
-            owner: self.owner.into_erased_send(),
-        }
+        OwningRef { reference: self.reference, owner: self.owner.into_erased_send() }
     }
 
-    /// Erases the concrete base type of the owner with a trait object which implements `Send` and `Sync`.
+    /// Erases the concrete base type of the owner with a trait object
+    /// which implements `Send` and `Sync`.
     ///
     /// This allows mixing of owned references with different owner base types.
     pub fn erase_send_sync_owner<'a>(self) -> OwningRef<O::Erased, T>
-        where O: IntoErasedSendSync<'a>,
+    where
+        O: IntoErasedSendSync<'a>,
     {
-        OwningRef {
-            reference: self.reference,
-            owner: self.owner.into_erased_send_sync(),
-        }
+        OwningRef { reference: self.reference, owner: self.owner.into_erased_send_sync() }
     }
 
-    // TODO: wrap_owner
+    // UNIMPLEMENTED: wrap_owner
 
     // FIXME: Naming convention?
     /// A getter for the underlying owner.
@@ -537,13 +525,11 @@ impl<O, T: ?Sized> OwningRefMut<O, T> {
     /// }
     /// ```
     pub fn new(mut o: O) -> Self
-        where O: StableAddress,
-              O: DerefMut<Target = T>,
+    where
+        O: StableAddress,
+        O: DerefMut<Target = T>,
     {
-        OwningRefMut {
-            reference: &mut *o,
-            owner: o,
-        }
+        OwningRefMut { reference: &mut *o, owner: o }
     }
 
     /// Like `new`, but doesn’t require `O` to implement the `StableAddress` trait.
@@ -552,12 +538,10 @@ impl<O, T: ?Sized> OwningRefMut<O, T> {
     /// This is useful for cases where coherence rules prevents implementing the trait
     /// without adding a dependency to this crate in a third-party library.
     pub unsafe fn new_assert_stable_address(mut o: O) -> Self
-        where O: DerefMut<Target = T>,
+    where
+        O: DerefMut<Target = T>,
     {
-        OwningRefMut {
-            reference: &mut *o,
-            owner: o,
-        }
+        OwningRefMut { reference: &mut *o, owner: o }
     }
 
     /// Converts `self` into a new _shared_ owning reference that points at
@@ -581,13 +565,11 @@ impl<O, T: ?Sized> OwningRefMut<O, T> {
     /// }
     /// ```
     pub fn map<F, U: ?Sized>(mut self, f: F) -> OwningRef<O, U>
-        where O: StableAddress,
-              F: FnOnce(&mut T) -> &U
+    where
+        O: StableAddress,
+        F: FnOnce(&mut T) -> &U,
     {
-        OwningRef {
-            reference: f(&mut self),
-            owner: self.owner,
-        }
+        OwningRef { reference: f(&mut self), owner: self.owner }
     }
 
     /// Converts `self` into a new _mutable_ owning reference that points at
@@ -611,13 +593,11 @@ impl<O, T: ?Sized> OwningRefMut<O, T> {
     /// }
     /// ```
     pub fn map_mut<F, U: ?Sized>(mut self, f: F) -> OwningRefMut<O, U>
-        where O: StableAddress,
-              F: FnOnce(&mut T) -> &mut U
+    where
+        O: StableAddress,
+        F: FnOnce(&mut T) -> &mut U,
     {
-        OwningRefMut {
-            reference: f(&mut self),
-            owner: self.owner,
-        }
+        OwningRefMut { reference: f(&mut self), owner: self.owner }
     }
 
     /// Tries to convert `self` into a new _shared_ owning reference that points
@@ -643,13 +623,11 @@ impl<O, T: ?Sized> OwningRefMut<O, T> {
     /// }
     /// ```
     pub fn try_map<F, U: ?Sized, E>(mut self, f: F) -> Result<OwningRef<O, U>, E>
-        where O: StableAddress,
-              F: FnOnce(&mut T) -> Result<&U, E>
+    where
+        O: StableAddress,
+        F: FnOnce(&mut T) -> Result<&U, E>,
     {
-        Ok(OwningRef {
-            reference: f(&mut self)?,
-            owner: self.owner,
-        })
+        Ok(OwningRef { reference: f(&mut self)?, owner: self.owner })
     }
 
     /// Tries to convert `self` into a new _mutable_ owning reference that points
@@ -675,13 +653,11 @@ impl<O, T: ?Sized> OwningRefMut<O, T> {
     /// }
     /// ```
     pub fn try_map_mut<F, U: ?Sized, E>(mut self, f: F) -> Result<OwningRefMut<O, U>, E>
-        where O: StableAddress,
-              F: FnOnce(&mut T) -> Result<&mut U, E>
+    where
+        O: StableAddress,
+        F: FnOnce(&mut T) -> Result<&mut U, E>,
     {
-        Ok(OwningRefMut {
-            reference: f(&mut self)?,
-            owner: self.owner,
-        })
+        Ok(OwningRefMut { reference: f(&mut self)?, owner: self.owner })
     }
 
     /// Converts `self` into a new owning reference with a different owner type.
@@ -690,14 +666,12 @@ impl<O, T: ?Sized> OwningRefMut<O, T> {
     /// so that the reference into it remains valid. This function is marked unsafe
     /// because the user needs to manually uphold this guarantee.
     pub unsafe fn map_owner<F, P>(self, f: F) -> OwningRefMut<P, T>
-        where O: StableAddress,
-              P: StableAddress,
-              F: FnOnce(O) -> P
+    where
+        O: StableAddress,
+        P: StableAddress,
+        F: FnOnce(O) -> P,
     {
-        OwningRefMut {
-            reference: self.reference,
-            owner: f(self.owner),
-        }
+        OwningRefMut { reference: self.reference, owner: f(self.owner) }
     }
 
     /// Converts `self` into a new owning reference where the owner is wrapped
@@ -706,10 +680,7 @@ impl<O, T: ?Sized> OwningRefMut<O, T> {
     /// This can be used to safely erase the owner of any `OwningRefMut<O, T>`
     /// to a `OwningRefMut<Box<Erased>, T>`.
     pub fn map_owner_box(self) -> OwningRefMut<Box<O>, T> {
-        OwningRefMut {
-            reference: self.reference,
-            owner: Box::new(self.owner),
-        }
+        OwningRefMut { reference: self.reference, owner: Box::new(self.owner) }
     }
 
     /// Erases the concrete base type of the owner with a trait object.
@@ -745,15 +716,13 @@ impl<O, T: ?Sized> OwningRefMut<O, T> {
     /// }
     /// ```
     pub fn erase_owner<'a>(self) -> OwningRefMut<O::Erased, T>
-        where O: IntoErased<'a>,
+    where
+        O: IntoErased<'a>,
     {
-        OwningRefMut {
-            reference: self.reference,
-            owner: self.owner.into_erased(),
-        }
+        OwningRefMut { reference: self.reference, owner: self.owner.into_erased() }
     }
 
-    // TODO: wrap_owner
+    // UNIMPLEMENTED: wrap_owner
 
     // FIXME: Naming convention?
     /// A getter for the underlying owner.
@@ -794,14 +763,18 @@ use std::ops::{Deref, DerefMut};
 /// implemented for common data structures. Types that implement `ToHandle` can
 /// be wrapped into an `OwningHandle` without passing a callback.
 pub struct OwningHandle<O, H>
-    where O: StableAddress, H: Deref,
+where
+    O: StableAddress,
+    H: Deref,
 {
     handle: H,
     _owner: O,
 }
 
 impl<O, H> Deref for OwningHandle<O, H>
-    where O: StableAddress, H: Deref,
+where
+    O: StableAddress,
+    H: Deref,
 {
     type Target = H::Target;
     fn deref(&self) -> &H::Target {
@@ -810,11 +783,16 @@ impl<O, H> Deref for OwningHandle<O, H>
 }
 
 unsafe impl<O, H> StableAddress for OwningHandle<O, H>
-    where O: StableAddress, H: StableAddress,
-{}
+where
+    O: StableAddress,
+    H: StableAddress,
+{
+}
 
 impl<O, H> DerefMut for OwningHandle<O, H>
-    where O: StableAddress, H: DerefMut,
+where
+    O: StableAddress,
+    H: DerefMut,
 {
     fn deref_mut(&mut self) -> &mut H::Target {
         self.handle.deref_mut()
@@ -842,7 +820,9 @@ pub trait ToHandleMut {
 }
 
 impl<O, H> OwningHandle<O, H>
-    where O: StableAddress, O::Target: ToHandle<Handle = H>, H: Deref,
+where
+    O: StableAddress<Target: ToHandle<Handle = H>>,
+    H: Deref,
 {
     /// Creates a new `OwningHandle` for a type that implements `ToHandle`. For types
     /// that don't implement `ToHandle`, callers may invoke `new_with_fn`, which accepts
@@ -853,7 +833,9 @@ impl<O, H> OwningHandle<O, H>
 }
 
 impl<O, H> OwningHandle<O, H>
-    where O: StableAddress, O::Target: ToHandleMut<HandleMut = H>, H: DerefMut,
+where
+    O: StableAddress<Target: ToHandleMut<HandleMut = H>>,
+    H: DerefMut,
 {
     /// Creates a new mutable `OwningHandle` for a type that implements `ToHandleMut`.
     pub fn new_mut(o: O) -> Self {
@@ -862,24 +844,24 @@ impl<O, H> OwningHandle<O, H>
 }
 
 impl<O, H> OwningHandle<O, H>
-    where O: StableAddress, H: Deref,
+where
+    O: StableAddress,
+    H: Deref,
 {
     /// Creates a new OwningHandle. The provided callback will be invoked with
     /// a pointer to the object owned by `o`, and the returned value is stored
     /// as the object to which this `OwningHandle` will forward `Deref` and
     /// `DerefMut`.
     pub fn new_with_fn<F>(o: O, f: F) -> Self
-        where F: FnOnce(*const O::Target) -> H
+    where
+        F: FnOnce(*const O::Target) -> H,
     {
         let h: H;
         {
             h = f(o.deref() as *const O::Target);
         }
 
-        OwningHandle {
-          handle: h,
-          _owner: o,
-        }
+        OwningHandle { handle: h, _owner: o }
     }
 
     /// Creates a new OwningHandle. The provided callback will be invoked with
@@ -887,17 +869,15 @@ impl<O, H> OwningHandle<O, H>
     /// as the object to which this `OwningHandle` will forward `Deref` and
     /// `DerefMut`.
     pub fn try_new<F, E>(o: O, f: F) -> Result<Self, E>
-        where F: FnOnce(*const O::Target) -> Result<H, E>
+    where
+        F: FnOnce(*const O::Target) -> Result<H, E>,
     {
         let h: H;
         {
             h = f(o.deref() as *const O::Target)?;
         }
 
-        Ok(OwningHandle {
-          handle: h,
-          _owner: o,
-        })
+        Ok(OwningHandle { handle: h, _owner: o })
     }
 }
 
@@ -905,20 +885,18 @@ impl<O, H> OwningHandle<O, H>
 // std traits
 /////////////////////////////////////////////////////////////////////////////
 
+use std::borrow::Borrow;
+use std::cmp::{Eq, Ord, Ordering, PartialEq, PartialOrd};
 use std::convert::From;
 use std::fmt::{self, Debug};
-use std::marker::{Send, Sync};
-use std::cmp::{Eq, PartialEq, Ord, PartialOrd, Ordering};
 use std::hash::{Hash, Hasher};
-use std::borrow::Borrow;
+use std::marker::{Send, Sync};
 
 impl<O, T: ?Sized> Deref for OwningRef<O, T> {
     type Target = T;
 
     fn deref(&self) -> &T {
-        unsafe {
-            &*self.reference
-        }
+        unsafe { &*self.reference }
     }
 }
 
@@ -926,17 +904,13 @@ impl<O, T: ?Sized> Deref for OwningRefMut<O, T> {
     type Target = T;
 
     fn deref(&self) -> &T {
-        unsafe {
-            &*self.reference
-        }
+        unsafe { &*self.reference }
     }
 }
 
 impl<O, T: ?Sized> DerefMut for OwningRefMut<O, T> {
     fn deref_mut(&mut self) -> &mut T {
-        unsafe {
-            &mut *self.reference
-        }
+        unsafe { &mut *self.reference }
     }
 }
 
@@ -967,8 +941,9 @@ impl<O, T: ?Sized> Borrow<T> for OwningRef<O, T> {
 }
 
 impl<O, T: ?Sized> From<O> for OwningRef<O, T>
-    where O: StableAddress,
-          O: Deref<Target = T>,
+where
+    O: StableAddress,
+    O: Deref<Target = T>,
 {
     fn from(owner: O) -> Self {
         OwningRef::new(owner)
@@ -976,8 +951,9 @@ impl<O, T: ?Sized> From<O> for OwningRef<O, T>
 }
 
 impl<O, T: ?Sized> From<O> for OwningRefMut<O, T>
-    where O: StableAddress,
-          O: DerefMut<Target = T>
+where
+    O: StableAddress,
+    O: DerefMut<Target = T>,
 {
     fn from(owner: O) -> Self {
         OwningRefMut::new(owner)
@@ -985,66 +961,73 @@ impl<O, T: ?Sized> From<O> for OwningRefMut<O, T>
 }
 
 impl<O, T: ?Sized> From<OwningRefMut<O, T>> for OwningRef<O, T>
-    where O: StableAddress,
-          O: DerefMut<Target = T>
+where
+    O: StableAddress,
+    O: DerefMut<Target = T>,
 {
     fn from(other: OwningRefMut<O, T>) -> Self {
-        OwningRef {
-            owner: other.owner,
-            reference: other.reference,
-        }
+        OwningRef { owner: other.owner, reference: other.reference }
     }
 }
 
 // ^ FIXME: Is a Into impl for calling into_inner() possible as well?
 
 impl<O, T: ?Sized> Debug for OwningRef<O, T>
-    where O: Debug,
-          T: Debug,
+where
+    O: Debug,
+    T: Debug,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f,
-               "OwningRef {{ owner: {:?}, reference: {:?} }}",
-               self.owner(),
-               &**self)
+        write!(f, "OwningRef {{ owner: {:?}, reference: {:?} }}", self.owner(), &**self)
     }
 }
 
 impl<O, T: ?Sized> Debug for OwningRefMut<O, T>
-    where O: Debug,
-          T: Debug,
+where
+    O: Debug,
+    T: Debug,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f,
-               "OwningRefMut {{ owner: {:?}, reference: {:?} }}",
-               self.owner(),
-               &**self)
+        write!(f, "OwningRefMut {{ owner: {:?}, reference: {:?} }}", self.owner(), &**self)
     }
 }
 
 impl<O, T: ?Sized> Clone for OwningRef<O, T>
-    where O: CloneStableAddress,
+where
+    O: CloneStableAddress,
 {
     fn clone(&self) -> Self {
-        OwningRef {
-            owner: self.owner.clone(),
-            reference: self.reference,
-        }
+        OwningRef { owner: self.owner.clone(), reference: self.reference }
     }
 }
 
-unsafe impl<O, T: ?Sized> CloneStableAddress for OwningRef<O, T>
-    where O: CloneStableAddress {}
+unsafe impl<O, T: ?Sized> CloneStableAddress for OwningRef<O, T> where O: CloneStableAddress {}
 
 unsafe impl<O, T: ?Sized> Send for OwningRef<O, T>
-    where O: Send, for<'a> (&'a T): Send {}
+where
+    O: Send,
+    for<'a> &'a T: Send,
+{
+}
 unsafe impl<O, T: ?Sized> Sync for OwningRef<O, T>
-    where O: Sync, for<'a> (&'a T): Sync {}
+where
+    O: Sync,
+    for<'a> &'a T: Sync,
+{
+}
 
 unsafe impl<O, T: ?Sized> Send for OwningRefMut<O, T>
-    where O: Send, for<'a> (&'a mut T): Send {}
+where
+    O: Send,
+    for<'a> &'a mut T: Send,
+{
+}
 unsafe impl<O, T: ?Sized> Sync for OwningRefMut<O, T>
-    where O: Sync, for<'a> (&'a mut T): Sync {}
+where
+    O: Sync,
+    for<'a> &'a mut T: Sync,
+{
+}
 
 impl Debug for dyn Erased {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -1052,53 +1035,77 @@ impl Debug for dyn Erased {
     }
 }
 
-impl<O, T: ?Sized> PartialEq for OwningRef<O, T> where T: PartialEq {
+impl<O, T: ?Sized> PartialEq for OwningRef<O, T>
+where
+    T: PartialEq,
+{
     fn eq(&self, other: &Self) -> bool {
         (&*self as &T).eq(&*other as &T)
-     }
+    }
 }
 
 impl<O, T: ?Sized> Eq for OwningRef<O, T> where T: Eq {}
 
-impl<O, T: ?Sized> PartialOrd for OwningRef<O, T> where T: PartialOrd {
+impl<O, T: ?Sized> PartialOrd for OwningRef<O, T>
+where
+    T: PartialOrd,
+{
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         (&*self as &T).partial_cmp(&*other as &T)
     }
 }
 
-impl<O, T: ?Sized> Ord for OwningRef<O, T> where T: Ord {
+impl<O, T: ?Sized> Ord for OwningRef<O, T>
+where
+    T: Ord,
+{
     fn cmp(&self, other: &Self) -> Ordering {
         (&*self as &T).cmp(&*other as &T)
     }
 }
 
-impl<O, T: ?Sized> Hash for OwningRef<O, T> where T: Hash {
+impl<O, T: ?Sized> Hash for OwningRef<O, T>
+where
+    T: Hash,
+{
     fn hash<H: Hasher>(&self, state: &mut H) {
         (&*self as &T).hash(state);
     }
 }
 
-impl<O, T: ?Sized> PartialEq for OwningRefMut<O, T> where T: PartialEq {
+impl<O, T: ?Sized> PartialEq for OwningRefMut<O, T>
+where
+    T: PartialEq,
+{
     fn eq(&self, other: &Self) -> bool {
         (&*self as &T).eq(&*other as &T)
-     }
+    }
 }
 
 impl<O, T: ?Sized> Eq for OwningRefMut<O, T> where T: Eq {}
 
-impl<O, T: ?Sized> PartialOrd for OwningRefMut<O, T> where T: PartialOrd {
+impl<O, T: ?Sized> PartialOrd for OwningRefMut<O, T>
+where
+    T: PartialOrd,
+{
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         (&*self as &T).partial_cmp(&*other as &T)
     }
 }
 
-impl<O, T: ?Sized> Ord for OwningRefMut<O, T> where T: Ord {
+impl<O, T: ?Sized> Ord for OwningRefMut<O, T>
+where
+    T: Ord,
+{
     fn cmp(&self, other: &Self) -> Ordering {
         (&*self as &T).cmp(&*other as &T)
     }
 }
 
-impl<O, T: ?Sized> Hash for OwningRefMut<O, T> where T: Hash {
+impl<O, T: ?Sized> Hash for OwningRefMut<O, T>
+where
+    T: Hash,
+{
     fn hash<H: Hasher>(&self, state: &mut H) {
         (&*self as &T).hash(state);
     }
@@ -1109,19 +1116,23 @@ impl<O, T: ?Sized> Hash for OwningRefMut<O, T> where T: Hash {
 /////////////////////////////////////////////////////////////////////////////
 
 use std::boxed::Box;
+use std::cell::{Ref, RefCell, RefMut};
 use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::{MutexGuard, RwLockReadGuard, RwLockWriteGuard};
-use std::cell::{Ref, RefCell, RefMut};
 
 impl<T: 'static> ToHandle for RefCell<T> {
     type Handle = Ref<'static, T>;
-    unsafe fn to_handle(x: *const Self) -> Self::Handle { (*x).borrow() }
+    unsafe fn to_handle(x: *const Self) -> Self::Handle {
+        (*x).borrow()
+    }
 }
 
 impl<T: 'static> ToHandleMut for RefCell<T> {
     type HandleMut = RefMut<'static, T>;
-    unsafe fn to_handle_mut(x: *const Self) -> Self::HandleMut { (*x).borrow_mut() }
+    unsafe fn to_handle_mut(x: *const Self) -> Self::HandleMut {
+        (*x).borrow_mut()
+    }
 }
 
 // N.B., implementing ToHandle{,Mut} for Mutex and RwLock requires a decision
@@ -1197,9 +1208,7 @@ unsafe impl<'a, T: Send + 'a> IntoErasedSendSync<'a> for Box<T> {
         let result: Box<dyn Erased + Send + 'a> = self;
         // This is safe since Erased can always implement Sync
         // Only the destructor is available and it takes &mut self
-        unsafe {
-            mem::transmute(result)
-        }
+        unsafe { mem::transmute(result) }
     }
 }
 
@@ -1221,717 +1230,4 @@ pub type ErasedArcRef<U> = OwningRef<Arc<dyn Erased>, U>;
 pub type ErasedBoxRefMut<U> = OwningRefMut<Box<dyn Erased>, U>;
 
 #[cfg(test)]
-mod tests {
-    mod owning_ref {
-        use super::super::OwningRef;
-        use super::super::{RcRef, BoxRef, Erased, ErasedBoxRef};
-        use std::cmp::{PartialEq, Ord, PartialOrd, Ordering};
-        use std::hash::{Hash, Hasher};
-        use std::collections::hash_map::DefaultHasher;
-        use std::collections::HashMap;
-        use std::rc::Rc;
-
-        #[derive(Debug, PartialEq)]
-        struct Example(u32, String, [u8; 3]);
-        fn example() -> Example {
-            Example(42, "hello world".to_string(), [1, 2, 3])
-        }
-
-        #[test]
-        fn new_deref() {
-            let or: OwningRef<Box<()>, ()> = OwningRef::new(Box::new(()));
-            assert_eq!(&*or, &());
-        }
-
-        #[test]
-        fn into() {
-            let or: OwningRef<Box<()>, ()> = Box::new(()).into();
-            assert_eq!(&*or, &());
-        }
-
-        #[test]
-        fn map_offset_ref() {
-            let or: BoxRef<Example> = Box::new(example()).into();
-            let or: BoxRef<_, u32> = or.map(|x| &x.0);
-            assert_eq!(&*or, &42);
-
-            let or: BoxRef<Example> = Box::new(example()).into();
-            let or: BoxRef<_, u8> = or.map(|x| &x.2[1]);
-            assert_eq!(&*or, &2);
-        }
-
-        #[test]
-        fn map_heap_ref() {
-            let or: BoxRef<Example> = Box::new(example()).into();
-            let or: BoxRef<_, str> = or.map(|x| &x.1[..5]);
-            assert_eq!(&*or, "hello");
-        }
-
-        #[test]
-        fn map_static_ref() {
-            let or: BoxRef<()> = Box::new(()).into();
-            let or: BoxRef<_, str> = or.map(|_| "hello");
-            assert_eq!(&*or, "hello");
-        }
-
-        #[test]
-        fn map_chained() {
-            let or: BoxRef<String> = Box::new(example().1).into();
-            let or: BoxRef<_, str> = or.map(|x| &x[1..5]);
-            let or: BoxRef<_, str> = or.map(|x| &x[..2]);
-            assert_eq!(&*or, "el");
-        }
-
-        #[test]
-        fn map_chained_inference() {
-            let or = BoxRef::new(Box::new(example().1))
-                .map(|x| &x[..5])
-                .map(|x| &x[1..3]);
-            assert_eq!(&*or, "el");
-        }
-
-        #[test]
-        fn owner() {
-            let or: BoxRef<String> = Box::new(example().1).into();
-            let or = or.map(|x| &x[..5]);
-            assert_eq!(&*or, "hello");
-            assert_eq!(&**or.owner(), "hello world");
-        }
-
-        #[test]
-        fn into_inner() {
-            let or: BoxRef<String> = Box::new(example().1).into();
-            let or = or.map(|x| &x[..5]);
-            assert_eq!(&*or, "hello");
-            let s = *or.into_inner();
-            assert_eq!(&s, "hello world");
-        }
-
-        #[test]
-        fn fmt_debug() {
-            let or: BoxRef<String> = Box::new(example().1).into();
-            let or = or.map(|x| &x[..5]);
-            let s = format!("{:?}", or);
-            assert_eq!(&s, "OwningRef { owner: \"hello world\", reference: \"hello\" }");
-        }
-
-        #[test]
-        fn erased_owner() {
-            let o1: BoxRef<Example, str> = BoxRef::new(Box::new(example()))
-                .map(|x| &x.1[..]);
-
-            let o2: BoxRef<String, str> = BoxRef::new(Box::new(example().1))
-                .map(|x| &x[..]);
-
-            let os: Vec<ErasedBoxRef<str>> = vec![o1.erase_owner(), o2.erase_owner()];
-            assert!(os.iter().all(|e| &e[..] == "hello world"));
-        }
-
-        #[test]
-        fn raii_locks() {
-            use super::super::{RefRef, RefMutRef};
-            use std::cell::RefCell;
-            use super::super::{MutexGuardRef, RwLockReadGuardRef, RwLockWriteGuardRef};
-            use std::sync::{Mutex, RwLock};
-
-            {
-                let a = RefCell::new(1);
-                let a = {
-                    let a = RefRef::new(a.borrow());
-                    assert_eq!(*a, 1);
-                    a
-                };
-                assert_eq!(*a, 1);
-                drop(a);
-            }
-            {
-                let a = RefCell::new(1);
-                let a = {
-                    let a = RefMutRef::new(a.borrow_mut());
-                    assert_eq!(*a, 1);
-                    a
-                };
-                assert_eq!(*a, 1);
-                drop(a);
-            }
-            {
-                let a = Mutex::new(1);
-                let a = {
-                    let a = MutexGuardRef::new(a.lock().unwrap());
-                    assert_eq!(*a, 1);
-                    a
-                };
-                assert_eq!(*a, 1);
-                drop(a);
-            }
-            {
-                let a = RwLock::new(1);
-                let a = {
-                    let a = RwLockReadGuardRef::new(a.read().unwrap());
-                    assert_eq!(*a, 1);
-                    a
-                };
-                assert_eq!(*a, 1);
-                drop(a);
-            }
-            {
-                let a = RwLock::new(1);
-                let a = {
-                    let a = RwLockWriteGuardRef::new(a.write().unwrap());
-                    assert_eq!(*a, 1);
-                    a
-                };
-                assert_eq!(*a, 1);
-                drop(a);
-            }
-        }
-
-        #[test]
-        fn eq() {
-            let or1: BoxRef<[u8]> = BoxRef::new(vec![1, 2, 3].into_boxed_slice());
-            let or2: BoxRef<[u8]> = BoxRef::new(vec![1, 2, 3].into_boxed_slice());
-            assert_eq!(or1.eq(&or2), true);
-        }
-
-        #[test]
-        fn cmp() {
-            let or1: BoxRef<[u8]> = BoxRef::new(vec![1, 2, 3].into_boxed_slice());
-            let or2: BoxRef<[u8]> = BoxRef::new(vec![4, 5, 6].into_boxed_slice());
-            assert_eq!(or1.cmp(&or2), Ordering::Less);
-        }
-
-        #[test]
-        fn partial_cmp() {
-            let or1: BoxRef<[u8]> = BoxRef::new(vec![4, 5, 6].into_boxed_slice());
-            let or2: BoxRef<[u8]> = BoxRef::new(vec![1, 2, 3].into_boxed_slice());
-            assert_eq!(or1.partial_cmp(&or2), Some(Ordering::Greater));
-        }
-
-        #[test]
-        fn hash() {
-            let mut h1 = DefaultHasher::new();
-            let mut h2 = DefaultHasher::new();
-
-            let or1: BoxRef<[u8]> = BoxRef::new(vec![1, 2, 3].into_boxed_slice());
-            let or2: BoxRef<[u8]> = BoxRef::new(vec![1, 2, 3].into_boxed_slice());
-
-            or1.hash(&mut h1);
-            or2.hash(&mut h2);
-
-            assert_eq!(h1.finish(), h2.finish());
-        }
-
-        #[test]
-        fn borrow() {
-            let mut hash = HashMap::new();
-            let     key  = RcRef::<String>::new(Rc::new("foo-bar".to_string())).map(|s| &s[..]);
-
-            hash.insert(key.clone().map(|s| &s[..3]), 42);
-            hash.insert(key.clone().map(|s| &s[4..]), 23);
-
-            assert_eq!(hash.get("foo"), Some(&42));
-            assert_eq!(hash.get("bar"), Some(&23));
-        }
-
-        #[test]
-        fn total_erase() {
-            let a: OwningRef<Vec<u8>, [u8]>
-                = OwningRef::new(vec![]).map(|x| &x[..]);
-            let b: OwningRef<Box<[u8]>, [u8]>
-                = OwningRef::new(vec![].into_boxed_slice()).map(|x| &x[..]);
-
-            let c: OwningRef<Rc<Vec<u8>>, [u8]> = unsafe {a.map_owner(Rc::new)};
-            let d: OwningRef<Rc<Box<[u8]>>, [u8]> = unsafe {b.map_owner(Rc::new)};
-
-            let e: OwningRef<Rc<dyn Erased>, [u8]> = c.erase_owner();
-            let f: OwningRef<Rc<dyn Erased>, [u8]> = d.erase_owner();
-
-            let _g = e.clone();
-            let _h = f.clone();
-        }
-
-        #[test]
-        fn total_erase_box() {
-            let a: OwningRef<Vec<u8>, [u8]>
-                = OwningRef::new(vec![]).map(|x| &x[..]);
-            let b: OwningRef<Box<[u8]>, [u8]>
-                = OwningRef::new(vec![].into_boxed_slice()).map(|x| &x[..]);
-
-            let c: OwningRef<Box<Vec<u8>>, [u8]> = a.map_owner_box();
-            let d: OwningRef<Box<Box<[u8]>>, [u8]> = b.map_owner_box();
-
-            let _e: OwningRef<Box<dyn Erased>, [u8]> = c.erase_owner();
-            let _f: OwningRef<Box<dyn Erased>, [u8]> = d.erase_owner();
-        }
-
-        #[test]
-        fn try_map1() {
-            use std::any::Any;
-
-            let x = Box::new(123_i32);
-            let y: Box<dyn Any> = x;
-
-            assert!(OwningRef::new(y).try_map(|x| x.downcast_ref::<i32>().ok_or(())).is_ok());
-        }
-
-        #[test]
-        fn try_map2() {
-            use std::any::Any;
-
-            let x = Box::new(123_i32);
-            let y: Box<dyn Any> = x;
-
-            assert!(!OwningRef::new(y).try_map(|x| x.downcast_ref::<i32>().ok_or(())).is_err());
-        }
-    }
-
-    mod owning_handle {
-        use super::super::OwningHandle;
-        use super::super::RcRef;
-        use std::rc::Rc;
-        use std::cell::RefCell;
-        use std::sync::Arc;
-        use std::sync::RwLock;
-
-        #[test]
-        fn owning_handle() {
-            use std::cell::RefCell;
-            let cell = Rc::new(RefCell::new(2));
-            let cell_ref = RcRef::new(cell);
-            let mut handle = OwningHandle::new_with_fn(cell_ref, |x| unsafe { x.as_ref() }.unwrap().borrow_mut());
-            assert_eq!(*handle, 2);
-            *handle = 3;
-            assert_eq!(*handle, 3);
-        }
-
-        #[test]
-        fn try_owning_handle_ok() {
-            use std::cell::RefCell;
-            let cell = Rc::new(RefCell::new(2));
-            let cell_ref = RcRef::new(cell);
-            let mut handle = OwningHandle::try_new::<_, ()>(cell_ref, |x| {
-                Ok(unsafe {
-                    x.as_ref()
-                }.unwrap().borrow_mut())
-            }).unwrap();
-            assert_eq!(*handle, 2);
-            *handle = 3;
-            assert_eq!(*handle, 3);
-        }
-
-        #[test]
-        fn try_owning_handle_err() {
-            use std::cell::RefCell;
-            let cell = Rc::new(RefCell::new(2));
-            let cell_ref = RcRef::new(cell);
-            let handle = OwningHandle::try_new::<_, ()>(cell_ref, |x| {
-                if false {
-                    return Ok(unsafe {
-                        x.as_ref()
-                    }.unwrap().borrow_mut())
-                }
-                Err(())
-            });
-            assert!(handle.is_err());
-        }
-
-        #[test]
-        fn nested() {
-            use std::cell::RefCell;
-            use std::sync::{Arc, RwLock};
-
-            let result = {
-                let complex = Rc::new(RefCell::new(Arc::new(RwLock::new("someString"))));
-                let curr = RcRef::new(complex);
-                let curr = OwningHandle::new_with_fn(curr, |x| unsafe { x.as_ref() }.unwrap().borrow_mut());
-                let mut curr = OwningHandle::new_with_fn(curr, |x| unsafe { x.as_ref() }.unwrap().try_write().unwrap());
-                assert_eq!(*curr, "someString");
-                *curr = "someOtherString";
-                curr
-            };
-            assert_eq!(*result, "someOtherString");
-        }
-
-        #[test]
-        fn owning_handle_safe() {
-            use std::cell::RefCell;
-            let cell = Rc::new(RefCell::new(2));
-            let cell_ref = RcRef::new(cell);
-            let handle = OwningHandle::new(cell_ref);
-            assert_eq!(*handle, 2);
-        }
-
-        #[test]
-        fn owning_handle_mut_safe() {
-            use std::cell::RefCell;
-            let cell = Rc::new(RefCell::new(2));
-            let cell_ref = RcRef::new(cell);
-            let mut handle = OwningHandle::new_mut(cell_ref);
-            assert_eq!(*handle, 2);
-            *handle = 3;
-            assert_eq!(*handle, 3);
-        }
-
-        #[test]
-        fn owning_handle_safe_2() {
-            let result = {
-                let complex = Rc::new(RefCell::new(Arc::new(RwLock::new("someString"))));
-                let curr = RcRef::new(complex);
-                let curr = OwningHandle::new_with_fn(curr, |x| unsafe { x.as_ref() }.unwrap().borrow_mut());
-                let mut curr = OwningHandle::new_with_fn(curr, |x| unsafe { x.as_ref() }.unwrap().try_write().unwrap());
-                assert_eq!(*curr, "someString");
-                *curr = "someOtherString";
-                curr
-            };
-            assert_eq!(*result, "someOtherString");
-        }
-    }
-
-    mod owning_ref_mut {
-        use super::super::{OwningRefMut, BoxRefMut, Erased, ErasedBoxRefMut};
-        use super::super::BoxRef;
-        use std::cmp::{PartialEq, Ord, PartialOrd, Ordering};
-        use std::hash::{Hash, Hasher};
-        use std::collections::hash_map::DefaultHasher;
-        use std::collections::HashMap;
-
-        #[derive(Debug, PartialEq)]
-        struct Example(u32, String, [u8; 3]);
-        fn example() -> Example {
-            Example(42, "hello world".to_string(), [1, 2, 3])
-        }
-
-        #[test]
-        fn new_deref() {
-            let or: OwningRefMut<Box<()>, ()> = OwningRefMut::new(Box::new(()));
-            assert_eq!(&*or, &());
-        }
-
-        #[test]
-        fn new_deref_mut() {
-            let mut or: OwningRefMut<Box<()>, ()> = OwningRefMut::new(Box::new(()));
-            assert_eq!(&mut *or, &mut ());
-        }
-
-        #[test]
-        fn mutate() {
-            let mut or: OwningRefMut<Box<usize>, usize> = OwningRefMut::new(Box::new(0));
-            assert_eq!(&*or, &0);
-            *or = 1;
-            assert_eq!(&*or, &1);
-        }
-
-        #[test]
-        fn into() {
-            let or: OwningRefMut<Box<()>, ()> = Box::new(()).into();
-            assert_eq!(&*or, &());
-        }
-
-        #[test]
-        fn map_offset_ref() {
-            let or: BoxRefMut<Example> = Box::new(example()).into();
-            let or: BoxRef<_, u32> = or.map(|x| &mut x.0);
-            assert_eq!(&*or, &42);
-
-            let or: BoxRefMut<Example> = Box::new(example()).into();
-            let or: BoxRef<_, u8> = or.map(|x| &mut x.2[1]);
-            assert_eq!(&*or, &2);
-        }
-
-        #[test]
-        fn map_heap_ref() {
-            let or: BoxRefMut<Example> = Box::new(example()).into();
-            let or: BoxRef<_, str> = or.map(|x| &mut x.1[..5]);
-            assert_eq!(&*or, "hello");
-        }
-
-        #[test]
-        fn map_static_ref() {
-            let or: BoxRefMut<()> = Box::new(()).into();
-            let or: BoxRef<_, str> = or.map(|_| "hello");
-            assert_eq!(&*or, "hello");
-        }
-
-        #[test]
-        fn map_mut_offset_ref() {
-            let or: BoxRefMut<Example> = Box::new(example()).into();
-            let or: BoxRefMut<_, u32> = or.map_mut(|x| &mut x.0);
-            assert_eq!(&*or, &42);
-
-            let or: BoxRefMut<Example> = Box::new(example()).into();
-            let or: BoxRefMut<_, u8> = or.map_mut(|x| &mut x.2[1]);
-            assert_eq!(&*or, &2);
-        }
-
-        #[test]
-        fn map_mut_heap_ref() {
-            let or: BoxRefMut<Example> = Box::new(example()).into();
-            let or: BoxRefMut<_, str> = or.map_mut(|x| &mut x.1[..5]);
-            assert_eq!(&*or, "hello");
-        }
-
-        #[test]
-        fn map_mut_static_ref() {
-            static mut MUT_S: [u8; 5] = *b"hello";
-
-            let mut_s: &'static mut [u8] = unsafe { &mut MUT_S };
-
-            let or: BoxRefMut<()> = Box::new(()).into();
-            let or: BoxRefMut<_, [u8]> = or.map_mut(move |_| mut_s);
-            assert_eq!(&*or, b"hello");
-        }
-
-        #[test]
-        fn map_mut_chained() {
-            let or: BoxRefMut<String> = Box::new(example().1).into();
-            let or: BoxRefMut<_, str> = or.map_mut(|x| &mut x[1..5]);
-            let or: BoxRefMut<_, str> = or.map_mut(|x| &mut x[..2]);
-            assert_eq!(&*or, "el");
-        }
-
-        #[test]
-        fn map_chained_inference() {
-            let or = BoxRefMut::new(Box::new(example().1))
-                .map_mut(|x| &mut x[..5])
-                .map_mut(|x| &mut x[1..3]);
-            assert_eq!(&*or, "el");
-        }
-
-        #[test]
-        fn try_map_mut() {
-            let or: BoxRefMut<String> = Box::new(example().1).into();
-            let or: Result<BoxRefMut<_, str>, ()> = or.try_map_mut(|x| Ok(&mut x[1..5]));
-            assert_eq!(&*or.unwrap(), "ello");
-
-            let or: BoxRefMut<String> = Box::new(example().1).into();
-            let or: Result<BoxRefMut<_, str>, ()> = or.try_map_mut(|_| Err(()));
-            assert!(or.is_err());
-        }
-
-        #[test]
-        fn owner() {
-            let or: BoxRefMut<String> = Box::new(example().1).into();
-            let or = or.map_mut(|x| &mut x[..5]);
-            assert_eq!(&*or, "hello");
-            assert_eq!(&**or.owner(), "hello world");
-        }
-
-        #[test]
-        fn into_inner() {
-            let or: BoxRefMut<String> = Box::new(example().1).into();
-            let or = or.map_mut(|x| &mut x[..5]);
-            assert_eq!(&*or, "hello");
-            let s = *or.into_inner();
-            assert_eq!(&s, "hello world");
-        }
-
-        #[test]
-        fn fmt_debug() {
-            let or: BoxRefMut<String> = Box::new(example().1).into();
-            let or = or.map_mut(|x| &mut x[..5]);
-            let s = format!("{:?}", or);
-            assert_eq!(&s,
-                       "OwningRefMut { owner: \"hello world\", reference: \"hello\" }");
-        }
-
-        #[test]
-        fn erased_owner() {
-            let o1: BoxRefMut<Example, str> = BoxRefMut::new(Box::new(example()))
-                .map_mut(|x| &mut x.1[..]);
-
-            let o2: BoxRefMut<String, str> = BoxRefMut::new(Box::new(example().1))
-                .map_mut(|x| &mut x[..]);
-
-            let os: Vec<ErasedBoxRefMut<str>> = vec![o1.erase_owner(), o2.erase_owner()];
-            assert!(os.iter().all(|e| &e[..] == "hello world"));
-        }
-
-        #[test]
-        fn raii_locks() {
-            use super::super::RefMutRefMut;
-            use std::cell::RefCell;
-            use super::super::{MutexGuardRefMut, RwLockWriteGuardRefMut};
-            use std::sync::{Mutex, RwLock};
-
-            {
-                let a = RefCell::new(1);
-                let a = {
-                    let a = RefMutRefMut::new(a.borrow_mut());
-                    assert_eq!(*a, 1);
-                    a
-                };
-                assert_eq!(*a, 1);
-                drop(a);
-            }
-            {
-                let a = Mutex::new(1);
-                let a = {
-                    let a = MutexGuardRefMut::new(a.lock().unwrap());
-                    assert_eq!(*a, 1);
-                    a
-                };
-                assert_eq!(*a, 1);
-                drop(a);
-            }
-            {
-                let a = RwLock::new(1);
-                let a = {
-                    let a = RwLockWriteGuardRefMut::new(a.write().unwrap());
-                    assert_eq!(*a, 1);
-                    a
-                };
-                assert_eq!(*a, 1);
-                drop(a);
-            }
-        }
-
-        #[test]
-        fn eq() {
-            let or1: BoxRefMut<[u8]> = BoxRefMut::new(vec![1, 2, 3].into_boxed_slice());
-            let or2: BoxRefMut<[u8]> = BoxRefMut::new(vec![1, 2, 3].into_boxed_slice());
-            assert_eq!(or1.eq(&or2), true);
-        }
-
-        #[test]
-        fn cmp() {
-            let or1: BoxRefMut<[u8]> = BoxRefMut::new(vec![1, 2, 3].into_boxed_slice());
-            let or2: BoxRefMut<[u8]> = BoxRefMut::new(vec![4, 5, 6].into_boxed_slice());
-            assert_eq!(or1.cmp(&or2), Ordering::Less);
-        }
-
-        #[test]
-        fn partial_cmp() {
-            let or1: BoxRefMut<[u8]> = BoxRefMut::new(vec![4, 5, 6].into_boxed_slice());
-            let or2: BoxRefMut<[u8]> = BoxRefMut::new(vec![1, 2, 3].into_boxed_slice());
-            assert_eq!(or1.partial_cmp(&or2), Some(Ordering::Greater));
-        }
-
-        #[test]
-        fn hash() {
-            let mut h1 = DefaultHasher::new();
-            let mut h2 = DefaultHasher::new();
-
-            let or1: BoxRefMut<[u8]> = BoxRefMut::new(vec![1, 2, 3].into_boxed_slice());
-            let or2: BoxRefMut<[u8]> = BoxRefMut::new(vec![1, 2, 3].into_boxed_slice());
-
-            or1.hash(&mut h1);
-            or2.hash(&mut h2);
-
-            assert_eq!(h1.finish(), h2.finish());
-        }
-
-        #[test]
-        fn borrow() {
-            let mut hash = HashMap::new();
-            let     key1 = BoxRefMut::<String>::new(Box::new("foo".to_string())).map(|s| &s[..]);
-            let     key2 = BoxRefMut::<String>::new(Box::new("bar".to_string())).map(|s| &s[..]);
-
-            hash.insert(key1, 42);
-            hash.insert(key2, 23);
-
-            assert_eq!(hash.get("foo"), Some(&42));
-            assert_eq!(hash.get("bar"), Some(&23));
-        }
-
-        #[test]
-        fn total_erase() {
-            let a: OwningRefMut<Vec<u8>, [u8]>
-                = OwningRefMut::new(vec![]).map_mut(|x| &mut x[..]);
-            let b: OwningRefMut<Box<[u8]>, [u8]>
-                = OwningRefMut::new(vec![].into_boxed_slice()).map_mut(|x| &mut x[..]);
-
-            let c: OwningRefMut<Box<Vec<u8>>, [u8]> = unsafe {a.map_owner(Box::new)};
-            let d: OwningRefMut<Box<Box<[u8]>>, [u8]> = unsafe {b.map_owner(Box::new)};
-
-            let _e: OwningRefMut<Box<dyn Erased>, [u8]> = c.erase_owner();
-            let _f: OwningRefMut<Box<dyn Erased>, [u8]> = d.erase_owner();
-        }
-
-        #[test]
-        fn total_erase_box() {
-            let a: OwningRefMut<Vec<u8>, [u8]>
-                = OwningRefMut::new(vec![]).map_mut(|x| &mut x[..]);
-            let b: OwningRefMut<Box<[u8]>, [u8]>
-                = OwningRefMut::new(vec![].into_boxed_slice()).map_mut(|x| &mut x[..]);
-
-            let c: OwningRefMut<Box<Vec<u8>>, [u8]> = a.map_owner_box();
-            let d: OwningRefMut<Box<Box<[u8]>>, [u8]> = b.map_owner_box();
-
-            let _e: OwningRefMut<Box<dyn Erased>, [u8]> = c.erase_owner();
-            let _f: OwningRefMut<Box<dyn Erased>, [u8]> = d.erase_owner();
-        }
-
-        #[test]
-        fn try_map1() {
-            use std::any::Any;
-
-            let x = Box::new(123_i32);
-            let y: Box<dyn Any> = x;
-
-            assert!(OwningRefMut::new(y).try_map_mut(|x| x.downcast_mut::<i32>().ok_or(())).is_ok());
-        }
-
-        #[test]
-        fn try_map2() {
-            use std::any::Any;
-
-            let x = Box::new(123_i32);
-            let y: Box<dyn Any> = x;
-
-            assert!(!OwningRefMut::new(y).try_map_mut(|x| x.downcast_mut::<i32>().ok_or(())).is_err());
-        }
-
-        #[test]
-        fn try_map3() {
-            use std::any::Any;
-
-            let x = Box::new(123_i32);
-            let y: Box<dyn Any> = x;
-
-            assert!(OwningRefMut::new(y).try_map(|x| x.downcast_ref::<i32>().ok_or(())).is_ok());
-        }
-
-        #[test]
-        fn try_map4() {
-            use std::any::Any;
-
-            let x = Box::new(123_i32);
-            let y: Box<dyn Any> = x;
-
-            assert!(!OwningRefMut::new(y).try_map(|x| x.downcast_ref::<i32>().ok_or(())).is_err());
-        }
-
-        #[test]
-        fn into_owning_ref() {
-            use super::super::BoxRef;
-
-            let or: BoxRefMut<()> = Box::new(()).into();
-            let or: BoxRef<()> = or.into();
-            assert_eq!(&*or, &());
-        }
-
-        struct Foo {
-            u: u32,
-        }
-        struct Bar {
-            f: Foo,
-        }
-
-        #[test]
-        fn ref_mut() {
-            use std::cell::RefCell;
-
-            let a = RefCell::new(Bar { f: Foo { u: 42 } });
-            let mut b = OwningRefMut::new(a.borrow_mut());
-            assert_eq!(b.f.u, 42);
-            b.f.u = 43;
-            let mut c = b.map_mut(|x| &mut x.f);
-            assert_eq!(c.u, 43);
-            c.u = 44;
-            let mut d = c.map_mut(|x| &mut x.u);
-            assert_eq!(*d, 44);
-            *d = 45;
-            assert_eq!(*d, 45);
-        }
-    }
-}
+mod tests;

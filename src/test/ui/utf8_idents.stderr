@@ -4,8 +4,8 @@ error[E0658]: non-ascii idents are not fully supported
 LL |     'β,
    |     ^^
    |
-   = note: for more information, see https://github.com/rust-lang/rust/issues/55467
-   = help: add #![feature(non_ascii_idents)] to the crate attributes to enable
+   = note: see issue #55467 <https://github.com/rust-lang/rust/issues/55467> for more information
+   = help: add `#![feature(non_ascii_idents)]` to the crate attributes to enable
 
 error[E0658]: non-ascii idents are not fully supported
   --> $DIR/utf8_idents.rs:3:5
@@ -13,8 +13,8 @@ error[E0658]: non-ascii idents are not fully supported
 LL |     γ
    |     ^
    |
-   = note: for more information, see https://github.com/rust-lang/rust/issues/55467
-   = help: add #![feature(non_ascii_idents)] to the crate attributes to enable
+   = note: see issue #55467 <https://github.com/rust-lang/rust/issues/55467> for more information
+   = help: add `#![feature(non_ascii_idents)]` to the crate attributes to enable
 
 error[E0658]: non-ascii idents are not fully supported
   --> $DIR/utf8_idents.rs:8:5
@@ -22,8 +22,8 @@ error[E0658]: non-ascii idents are not fully supported
 LL |     δ: usize
    |     ^
    |
-   = note: for more information, see https://github.com/rust-lang/rust/issues/55467
-   = help: add #![feature(non_ascii_idents)] to the crate attributes to enable
+   = note: see issue #55467 <https://github.com/rust-lang/rust/issues/55467> for more information
+   = help: add `#![feature(non_ascii_idents)]` to the crate attributes to enable
 
 error[E0658]: non-ascii idents are not fully supported
   --> $DIR/utf8_idents.rs:12:9
@@ -31,8 +31,8 @@ error[E0658]: non-ascii idents are not fully supported
 LL |     let α = 0.00001f64;
    |         ^
    |
-   = note: for more information, see https://github.com/rust-lang/rust/issues/55467
-   = help: add #![feature(non_ascii_idents)] to the crate attributes to enable
+   = note: see issue #55467 <https://github.com/rust-lang/rust/issues/55467> for more information
+   = help: add `#![feature(non_ascii_idents)]` to the crate attributes to enable
 
 warning: type parameter `γ` should have an upper camel case name
   --> $DIR/utf8_idents.rs:3:5
@@ -40,8 +40,8 @@ warning: type parameter `γ` should have an upper camel case name
 LL |     γ
    |     ^ help: convert the identifier to upper camel case: `Γ`
    |
-   = note: #[warn(non_camel_case_types)] on by default
+   = note: `#[warn(non_camel_case_types)]` on by default
 
-error: aborting due to 4 previous errors
+error: aborting due to 4 previous errors; 1 warning emitted
 
 For more information about this error, try `rustc --explain E0658`.

@@ -22,20 +22,16 @@ members = [
   "src/tools/rls",
   "src/tools/rustfmt",
   "src/tools/miri",
+  "src/tools/miri/cargo-miri",
   "src/tools/rustdoc-themes",
+  "src/tools/unicode-table-generator",
+  "src/tools/expand-yaml-anchors",
 ]
 exclude = [
   "build",
   # HACK(eddyb) This hardcodes the fact that our CI uses `/checkout/obj`.
   "obj",
 ]
-
-# Curiously, LLVM 7.0 will segfault if compiled with opt-level=3
-# See issue https://github.com/rust-lang/rust/issues/52378
-[profile.release]
-opt-level = 2
-[profile.bench]
-opt-level = 2
 
 # These options are controlled from our rustc wrapper script, so turn them off
 # here and have them controlled elsewhere.
@@ -68,6 +64,7 @@ rustc-workspace-hack = { path = 'src/tools/rustc-workspace-hack' }
 # here
 rustc-std-workspace-core = { path = 'src/tools/rustc-std-workspace-core' }
 rustc-std-workspace-alloc = { path = 'src/tools/rustc-std-workspace-alloc' }
+rustc-std-workspace-std = { path = 'src/tools/rustc-std-workspace-std' }
 
 [patch."https://github.com/rust-lang/rust-clippy"]
 clippy_lints = { path = "src/tools/clippy/clippy_lints" }

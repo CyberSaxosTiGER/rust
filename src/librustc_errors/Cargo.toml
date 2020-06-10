@@ -7,15 +7,18 @@ edition = "2018"
 [lib]
 name = "rustc_errors"
 path = "lib.rs"
-crate-type = ["dylib"]
+doctest = false
 
 [dependencies]
 log = "0.4"
-serialize = { path = "../libserialize" }
-syntax_pos = { path = "../libsyntax_pos" }
+rustc_serialize = { path = "../librustc_serialize" }
+rustc_span = { path = "../librustc_span" }
 rustc_data_structures = { path = "../librustc_data_structures" }
-rustc_cratesio_shim = { path = "../librustc_cratesio_shim" }
 unicode-width = "0.1.4"
 atty = "0.2"
 termcolor = "1.0"
-annotate-snippets = "0.5.0"
+annotate-snippets = "0.8.0"
+termize = "0.1.1"
+
+[target.'cfg(windows)'.dependencies]
+winapi = { version = "0.3", features = ["handleapi", "synchapi", "winbase"] }

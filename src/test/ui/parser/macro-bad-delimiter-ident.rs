@@ -1,3 +1,3 @@
 fn main() {
-    foo! bar < //~ ERROR expected `(` or `{`, found `<`
+    foo! bar < //~ ERROR expected one of `(`, `[`, or `{`, found `bar`
 }

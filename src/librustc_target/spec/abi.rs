@@ -1,9 +1,24 @@
 use std::fmt;
 
+use rustc_macros::HashStable_Generic;
+
+#[cfg(test)]
+mod tests;
+
 #[derive(PartialEq, Eq, PartialOrd, Ord, Hash, RustcEncodable, RustcDecodable, Clone, Copy, Debug)]
+#[derive(HashStable_Generic)]
 pub enum Abi {
     // N.B., this ordering MUST match the AbiDatas array below.
     // (This is ensured by the test indices_are_correct().)
+
+    // Multiplatform / generic ABIs
+    //
+    // These ABIs come first because every time we add a new ABI, we
+    // have to re-bless all the hashing tests. These are used in many
+    // places, so giving them stable values reduces test churn. The
+    // specific values are meaningless.
+    Rust = 0,
+    C = 1,
 
     // Single platform ABIs
     Cdecl,
@@ -18,15 +33,14 @@ pub enum Abi {
     Msp430Interrupt,
     X86Interrupt,
     AmdGpuKernel,
+    EfiApi,
 
     // Multiplatform / generic ABIs
-    Rust,
-    C,
     System,
     RustIntrinsic,
     RustCall,
     PlatformIntrinsic,
-    Unadjusted
+    Unadjusted,
 }
 
 #[derive(Copy, Clone)]
@@ -42,28 +56,29 @@ pub struct AbiData {
 
 #[allow(non_upper_case_globals)]
 const AbiDatas: &[AbiData] = &[
-    // Platform-specific ABIs
-    AbiData {abi: Abi::Cdecl, name: "cdecl", generic: false },
-    AbiData {abi: Abi::Stdcall, name: "stdcall", generic: false },
-    AbiData {abi: Abi::Fastcall, name: "fastcall", generic: false },
-    AbiData {abi: Abi::Vectorcall, name: "vectorcall", generic: false},
-    AbiData {abi: Abi::Thiscall, name: "thiscall", generic: false},
-    AbiData {abi: Abi::Aapcs, name: "aapcs", generic: false },
-    AbiData {abi: Abi::Win64, name: "win64", generic: false },
-    AbiData {abi: Abi::SysV64, name: "sysv64", generic: false },
-    AbiData {abi: Abi::PtxKernel, name: "ptx-kernel", generic: false },
-    AbiData {abi: Abi::Msp430Interrupt, name: "msp430-interrupt", generic: false },
-    AbiData {abi: Abi::X86Interrupt, name: "x86-interrupt", generic: false },
-    AbiData {abi: Abi::AmdGpuKernel, name: "amdgpu-kernel", generic: false },
-
     // Cross-platform ABIs
-    AbiData {abi: Abi::Rust, name: "Rust", generic: true },
-    AbiData {abi: Abi::C, name: "C", generic: true },
-    AbiData {abi: Abi::System, name: "system", generic: true },
-    AbiData {abi: Abi::RustIntrinsic, name: "rust-intrinsic", generic: true },
-    AbiData {abi: Abi::RustCall, name: "rust-call", generic: true },
-    AbiData {abi: Abi::PlatformIntrinsic, name: "platform-intrinsic", generic: true },
-    AbiData {abi: Abi::Unadjusted, name: "unadjusted", generic: true },
+    AbiData { abi: Abi::Rust, name: "Rust", generic: true },
+    AbiData { abi: Abi::C, name: "C", generic: true },
+    // Platform-specific ABIs
+    AbiData { abi: Abi::Cdecl, name: "cdecl", generic: false },
+    AbiData { abi: Abi::Stdcall, name: "stdcall", generic: false },
+    AbiData { abi: Abi::Fastcall, name: "fastcall", generic: false },
+    AbiData { abi: Abi::Vectorcall, name: "vectorcall", generic: false },
+    AbiData { abi: Abi::Thiscall, name: "thiscall", generic: false },
+    AbiData { abi: Abi::Aapcs, name: "aapcs", generic: false },
+    AbiData { abi: Abi::Win64, name: "win64", generic: false },
+    AbiData { abi: Abi::SysV64, name: "sysv64", generic: false },
+    AbiData { abi: Abi::PtxKernel, name: "ptx-kernel", generic: false },
+    AbiData { abi: Abi::Msp430Interrupt, name: "msp430-interrupt", generic: false },
+    AbiData { abi: Abi::X86Interrupt, name: "x86-interrupt", generic: false },
+    AbiData { abi: Abi::AmdGpuKernel, name: "amdgpu-kernel", generic: false },
+    AbiData { abi: Abi::EfiApi, name: "efiapi", generic: false },
+    // Cross-platform ABIs
+    AbiData { abi: Abi::System, name: "system", generic: true },
+    AbiData { abi: Abi::RustIntrinsic, name: "rust-intrinsic", generic: true },
+    AbiData { abi: Abi::RustCall, name: "rust-call", generic: true },
+    AbiData { abi: Abi::PlatformIntrinsic, name: "platform-intrinsic", generic: true },
+    AbiData { abi: Abi::Unadjusted, name: "unadjusted", generic: true },
 ];
 
 /// Returns the ABI with the given name (if any).
@@ -98,31 +113,5 @@ impl Abi {
 impl fmt::Display for Abi {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "\"{}\"", self.name())
-    }
-}
-
-#[allow(non_snake_case)]
-#[test]
-fn lookup_Rust() {
-    let abi = lookup("Rust");
-    assert!(abi.is_some() && abi.unwrap().data().name == "Rust");
-}
-
-#[test]
-fn lookup_cdecl() {
-    let abi = lookup("cdecl");
-    assert!(abi.is_some() && abi.unwrap().data().name == "cdecl");
-}
-
-#[test]
-fn lookup_baz() {
-    let abi = lookup("baz");
-    assert!(abi.is_none());
-}
-
-#[test]
-fn indices_are_correct() {
-    for (i, abi_data) in AbiDatas.iter().enumerate() {
-        assert_eq!(i, abi_data.abi.index());
     }
 }

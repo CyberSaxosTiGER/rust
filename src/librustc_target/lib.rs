@@ -8,27 +8,27 @@
 //! LLVM.
 
 #![doc(html_root_url = "https://doc.rust-lang.org/nightly/")]
-
-#![feature(box_syntax)]
+#![feature(bool_to_option)]
+#![feature(const_if_match)]
+#![feature(const_fn)]
+#![feature(const_panic)]
 #![feature(nll)]
-#![feature(rustc_attrs)]
-#![feature(slice_patterns)]
-#![feature(step_trait)]
+#![feature(never_type)]
+#![feature(associated_type_bounds)]
+#![feature(exhaustive_patterns)]
 
-#![deny(rust_2018_idioms)]
-#![deny(internal)]
-
-#[macro_use] extern crate log;
-
-#[allow(unused_extern_crates)]
-extern crate serialize as rustc_serialize; // used by deriving
-
-// See librustc_cratesio_shim/Cargo.toml for a comment explaining this.
-#[allow(unused_extern_crates)]
-extern crate rustc_cratesio_shim;
+// FIXME(#56935): Work around ICEs during cross-compilation.
+#[allow(unused)]
+extern crate rustc_macros;
 
 #[macro_use]
-extern crate rustc_data_structures;
+extern crate log;
 
 pub mod abi;
+pub mod asm;
 pub mod spec;
+
+/// Requirements for a `StableHashingContext` to be used in this crate.
+/// This is a hack to allow using the `HashStable_Generic` derive macro
+/// instead of implementing everything in librustc_middle.
+pub trait HashStableContext {}

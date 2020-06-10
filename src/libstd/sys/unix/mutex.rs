@@ -1,7 +1,9 @@
 use crate::cell::UnsafeCell;
-use crate::mem;
+use crate::mem::MaybeUninit;
 
-pub struct Mutex { inner: UnsafeCell<libc::pthread_mutex_t> }
+pub struct Mutex {
+    inner: UnsafeCell<libc::pthread_mutex_t>,
+}
 
 #[inline]
 pub unsafe fn raw(m: &Mutex) -> *mut libc::pthread_mutex_t {
@@ -26,28 +28,34 @@ impl Mutex {
         //
         // A pthread mutex initialized with PTHREAD_MUTEX_INITIALIZER will have
         // a type of PTHREAD_MUTEX_DEFAULT, which has undefined behavior if you
-        // try to re-lock it from the same thread when you already hold a lock.
+        // try to re-lock it from the same thread when you already hold a lock
+        // (https://pubs.opengroup.org/onlinepubs/9699919799/functions/pthread_mutex_init.html).
+        // This is the case even if PTHREAD_MUTEX_DEFAULT == PTHREAD_MUTEX_NORMAL
+        // (https://github.com/rust-lang/rust/issues/33770#issuecomment-220847521) -- in that
+        // case, `pthread_mutexattr_settype(PTHREAD_MUTEX_DEFAULT)` will of course be the same
+        // as setting it to `PTHREAD_MUTEX_NORMAL`, but not setting any mode will result in
+        // a Mutex where re-locking is UB.
         //
         // In practice, glibc takes advantage of this undefined behavior to
         // implement hardware lock elision, which uses hardware transactional
         // memory to avoid acquiring the lock. While a transaction is in
         // progress, the lock appears to be unlocked. This isn't a problem for
         // other threads since the transactional memory will abort if a conflict
-        // is detected, however no abort is generated if re-locking from the
+        // is detected, however no abort is generated when re-locking from the
         // same thread.
         //
         // Since locking the same mutex twice will result in two aliasing &mut
         // references, we instead create the mutex with type
         // PTHREAD_MUTEX_NORMAL which is guaranteed to deadlock if we try to
         // re-lock it from the same thread, thus avoiding undefined behavior.
-        let mut attr: libc::pthread_mutexattr_t = mem::uninitialized();
-        let r = libc::pthread_mutexattr_init(&mut attr);
+        let mut attr = MaybeUninit::<libc::pthread_mutexattr_t>::uninit();
+        let r = libc::pthread_mutexattr_init(attr.as_mut_ptr());
         debug_assert_eq!(r, 0);
-        let r = libc::pthread_mutexattr_settype(&mut attr, libc::PTHREAD_MUTEX_NORMAL);
+        let r = libc::pthread_mutexattr_settype(attr.as_mut_ptr(), libc::PTHREAD_MUTEX_NORMAL);
         debug_assert_eq!(r, 0);
-        let r = libc::pthread_mutex_init(self.inner.get(), &attr);
+        let r = libc::pthread_mutex_init(self.inner.get(), attr.as_ptr());
         debug_assert_eq!(r, 0);
-        let r = libc::pthread_mutexattr_destroy(&mut attr);
+        let r = libc::pthread_mutexattr_destroy(attr.as_mut_ptr());
         debug_assert_eq!(r, 0);
     }
     #[inline]
@@ -82,26 +90,28 @@ impl Mutex {
     }
 }
 
-pub struct ReentrantMutex { inner: UnsafeCell<libc::pthread_mutex_t> }
+pub struct ReentrantMutex {
+    inner: UnsafeCell<libc::pthread_mutex_t>,
+}
 
 unsafe impl Send for ReentrantMutex {}
 unsafe impl Sync for ReentrantMutex {}
 
 impl ReentrantMutex {
-    pub unsafe fn uninitialized() -> ReentrantMutex {
-        ReentrantMutex { inner: mem::uninitialized() }
+    pub const unsafe fn uninitialized() -> ReentrantMutex {
+        ReentrantMutex { inner: UnsafeCell::new(libc::PTHREAD_MUTEX_INITIALIZER) }
     }
 
-    pub unsafe fn init(&mut self) {
-        let mut attr: libc::pthread_mutexattr_t = mem::uninitialized();
-        let result = libc::pthread_mutexattr_init(&mut attr as *mut _);
+    pub unsafe fn init(&self) {
+        let mut attr = MaybeUninit::<libc::pthread_mutexattr_t>::uninit();
+        let result = libc::pthread_mutexattr_init(attr.as_mut_ptr());
         debug_assert_eq!(result, 0);
-        let result = libc::pthread_mutexattr_settype(&mut attr as *mut _,
-                                                    libc::PTHREAD_MUTEX_RECURSIVE);
+        let result =
+            libc::pthread_mutexattr_settype(attr.as_mut_ptr(), libc::PTHREAD_MUTEX_RECURSIVE);
         debug_assert_eq!(result, 0);
-        let result = libc::pthread_mutex_init(self.inner.get(), &attr as *const _);
+        let result = libc::pthread_mutex_init(self.inner.get(), attr.as_ptr());
         debug_assert_eq!(result, 0);
-        let result = libc::pthread_mutexattr_destroy(&mut attr as *mut _);
+        let result = libc::pthread_mutexattr_destroy(attr.as_mut_ptr());
         debug_assert_eq!(result, 0);
     }
 

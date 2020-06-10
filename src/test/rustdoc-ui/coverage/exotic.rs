@@ -1,5 +1,5 @@
 // compile-flags:-Z unstable-options --show-coverage
-// compile-pass
+// check-pass
 
 #![feature(doc_keyword)]
 

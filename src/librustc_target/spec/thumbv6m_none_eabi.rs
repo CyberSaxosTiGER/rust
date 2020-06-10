@@ -8,7 +8,7 @@ pub fn target() -> TargetResult {
         target_endian: "little".to_string(),
         target_pointer_width: "32".to_string(),
         target_c_int_width: "32".to_string(),
-        data_layout: "e-m:e-p:32:32-i64:64-v128:64:128-a:0:32-n32-S64".to_string(),
+        data_layout: "e-m:e-p:32:32-Fi8-i64:64-v128:64:128-a:0:32-n32-S64".to_string(),
         arch: "arm".to_string(),
         target_os: "none".to_string(),
         target_env: String::new(),
@@ -22,7 +22,7 @@ pub fn target() -> TargetResult {
             // There are no atomic CAS instructions available in the instruction set of the ARMv6-M
             // architecture
             atomic_cas: false,
-            .. super::thumb_base::opts()
-        }
+            ..super::thumb_base::opts()
+        },
     })
 }

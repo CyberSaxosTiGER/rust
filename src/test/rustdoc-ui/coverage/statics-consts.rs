@@ -1,5 +1,5 @@
 // compile-flags:-Z unstable-options --show-coverage
-// compile-pass
+// check-pass
 
 //! gotta make sure we can count statics and consts correctly, too
 

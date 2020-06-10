@@ -1,5 +1,5 @@
 // compile-flags: -A bad-style
-// compile-pass
+// check-pass
 
 fn main() {
     let _InappropriateCamelCasing = true;

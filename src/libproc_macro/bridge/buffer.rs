@@ -23,10 +23,7 @@ impl<T> Clone for Slice<'a, T> {
 
 impl<T> From<&'a [T]> for Slice<'a, T> {
     fn from(xs: &'a [T]) -> Self {
-        Slice {
-            data: unsafe { &*(xs.as_ptr() as *const [T; 0]) },
-            len: xs.len(),
-        }
+        Slice { data: unsafe { &*(xs.as_ptr() as *const [T; 0]) }, len: xs.len() }
     }
 }
 
@@ -78,7 +75,7 @@ impl<T: Copy> Buffer<T> {
     }
 
     pub(super) fn take(&mut self) -> Self {
-        mem::replace(self, Self::default())
+        mem::take(self)
     }
 
     pub(super) fn extend_from_slice(&mut self, xs: &[T]) {
@@ -128,12 +125,7 @@ impl<T: Copy> From<Vec<T>> for Buffer<T> {
         // be safely called on `Buffer`s created by *this* `proc_macro`.
         fn to_vec<T: Copy>(b: Buffer<T>) -> Vec<T> {
             unsafe {
-                let Buffer {
-                    data,
-                    len,
-                    capacity,
-                    ..
-                } = b;
+                let Buffer { data, len, capacity, .. } = b;
                 mem::forget(b);
                 Vec::from_raw_parts(data, len, capacity)
             }
@@ -149,12 +141,6 @@ impl<T: Copy> From<Vec<T>> for Buffer<T> {
             mem::drop(to_vec(b));
         }
 
-        Buffer {
-            data,
-            len,
-            capacity,
-            extend_from_slice,
-            drop,
-        }
+        Buffer { data, len, capacity, extend_from_slice, drop }
     }
 }

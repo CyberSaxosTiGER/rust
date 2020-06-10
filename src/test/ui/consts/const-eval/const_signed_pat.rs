@@ -1,4 +1,4 @@
-// compile-pass
+// check-pass
 
 fn main() {
     const MIN: i8 = -5;

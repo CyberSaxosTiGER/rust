@@ -1,6 +1,6 @@
 // extra unused mut lint tests for #51918
 
-// compile-pass
+// check-pass
 
 #![feature(generators, nll)]
 #![deny(unused_mut)]

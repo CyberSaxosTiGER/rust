@@ -168,6 +168,18 @@ struct floats {
     double c;
 };
 
+struct char_char_double {
+    uint8_t a;
+    uint8_t b;
+    double c;
+};
+
+struct char_char_float {
+    uint8_t a;
+    uint8_t b;
+    float c;
+};
+
 struct quad
 rust_dbg_abi_1(struct quad q) {
     struct quad qq = { q.c + 1,
@@ -184,6 +196,23 @@ rust_dbg_abi_2(struct floats f) {
                          f.a - 1.0 };
     return ff;
 }
+
+struct char_char_double
+rust_dbg_abi_3(struct char_char_double a) {
+    struct char_char_double ccd = { a.a + 1,
+                                    a.b - 1,
+                                    a.c + 1.0 };
+    return ccd;
+}
+
+struct char_char_float
+rust_dbg_abi_4(struct char_char_float a) {
+    struct char_char_float ccd = { a.a + 1,
+                                   a.b - 1,
+                                   a.c + 1.0 };
+    return ccd;
+}
+
 
 int
 rust_dbg_static_mut = 3;
@@ -215,19 +244,49 @@ uint64_t get_c_many_params(void *a, void *b, void *c, void *d, struct quad f) {
     return f.c;
 }
 
+struct quad_floats {
+    float a;
+    float b;
+    float c;
+    float d;
+};
+
+float get_c_exhaust_sysv64_ints(
+    void *a,
+    void *b,
+    void *c,
+    void *d,
+    void *e,
+    void *f,
+    // `f` used the last integer register, so `g` goes on the stack.
+    // It also used to bring the "count of available integer registers" down to
+    // `-1` which broke the next SSE-only aggregate argument (`h`) - see #62350.
+    void *g,
+    struct quad_floats h
+) {
+    return h.c;
+}
+
 // Calculates the average of `(x + y) / n` where x: i64, y: f64. There must be exactly n pairs
-// passed as variadic arguments.
-double rust_interesting_average(uint64_t n, ...) {
-    va_list pairs;
+// passed as variadic arguments. There are two versions of this function: the
+// variadic one, and the one that takes a `va_list`.
+double rust_valist_interesting_average(uint64_t n, va_list pairs) {
     double sum = 0.0;
     int i;
-    va_start(pairs, n);
     for(i = 0; i < n; i += 1) {
         sum += (double)va_arg(pairs, int64_t);
         sum += va_arg(pairs, double);
     }
-    va_end(pairs);
     return sum / n;
+}
+
+double rust_interesting_average(uint64_t n, ...) {
+    double sum;
+    va_list pairs;
+    va_start(pairs, n);
+    sum = rust_valist_interesting_average(n, pairs);
+    va_end(pairs);
+    return sum;
 }
 
 int32_t rust_int8_to_int32(int8_t x) {
@@ -270,3 +329,89 @@ __int128 sub(__int128 a, __int128 b) {
 }
 
 #endif
+
+#define OPTION_TAG_NONE (0)
+#define OPTION_TAG_SOME (1)
+
+struct U8TaggedEnumOptionU64 {
+    uint8_t tag;
+    union {
+        uint64_t some;
+    };
+};
+
+struct U8TaggedEnumOptionU64
+rust_dbg_new_some_u64(uint64_t some) {
+    struct U8TaggedEnumOptionU64 r = {
+        .tag = OPTION_TAG_SOME,
+        .some = some,
+    };
+    return r;
+}
+
+struct U8TaggedEnumOptionU64
+rust_dbg_new_none_u64(void) {
+    struct U8TaggedEnumOptionU64 r = {
+        .tag = OPTION_TAG_NONE,
+    };
+    return r;
+}
+
+int32_t
+rust_dbg_unpack_option_u64(struct U8TaggedEnumOptionU64 o, uint64_t *into) {
+    assert(into);
+    switch (o.tag) {
+    case OPTION_TAG_SOME:
+        *into = o.some;
+        return 1;
+    case OPTION_TAG_NONE:
+        return 0;
+    default:
+        assert(0 && "unexpected tag");
+        return 0;
+    }
+}
+
+struct U8TaggedEnumOptionU64U64 {
+    uint8_t tag;
+    union {
+        struct {
+            uint64_t a;
+            uint64_t b;
+        } some;
+    };
+};
+
+struct U8TaggedEnumOptionU64U64
+rust_dbg_new_some_u64u64(uint64_t a, uint64_t b) {
+    struct U8TaggedEnumOptionU64U64 r = {
+        .tag = OPTION_TAG_SOME,
+        .some = { .a = a, .b = b },
+    };
+    return r;
+}
+
+struct U8TaggedEnumOptionU64U64
+rust_dbg_new_none_u64u64(void) {
+    struct U8TaggedEnumOptionU64U64 r = {
+        .tag = OPTION_TAG_NONE,
+    };
+    return r;
+}
+
+int32_t
+rust_dbg_unpack_option_u64u64(struct U8TaggedEnumOptionU64U64 o, uint64_t *a, uint64_t *b) {
+    assert(a);
+    assert(b);
+    switch (o.tag) {
+    case OPTION_TAG_SOME:
+        *a = o.some.a;
+        *b = o.some.b;
+        return 1;
+    case OPTION_TAG_NONE:
+        return 0;
+    default:
+        assert(0 && "unexpected tag");
+        return 0;
+    }
+}

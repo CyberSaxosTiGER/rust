@@ -26,6 +26,7 @@ mod inner1 {
 }
 
 exported!(); //~ ERROR `exported` is ambiguous
+             //~| ERROR `exported` is ambiguous
 
 mod inner2 {
     define_exported!();
@@ -33,7 +34,6 @@ mod inner2 {
 
 fn main() {
     panic!(); //~ ERROR `panic` is ambiguous
-              //~| ERROR `panic` is ambiguous
 }
 
 mod inner3 {

@@ -1,4 +1,4 @@
-// compile-pass
+// check-pass
 
 // This is a stub feature that doesn't control anything, so to make tidy happy,
 // gate-test-test_2018_feature

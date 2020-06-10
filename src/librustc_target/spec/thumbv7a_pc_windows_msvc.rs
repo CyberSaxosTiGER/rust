@@ -1,4 +1,4 @@
-use crate::spec::{LinkerFlavor, Target, TargetOptions, TargetResult, PanicStrategy};
+use crate::spec::{LinkerFlavor, LldFlavor, PanicStrategy, Target, TargetOptions, TargetResult};
 
 pub fn target() -> TargetResult {
     let mut base = super::windows_msvc_base::opts();
@@ -10,8 +10,12 @@ pub fn target() -> TargetResult {
     // should be smart enough to insert branch islands only
     // where necessary, but this is not the observed behavior.
     // Disabling the LBR optimization works around the issue.
-    base.pre_link_args.get_mut(&LinkerFlavor::Msvc).unwrap().push(
-        "/OPT:NOLBR".to_string());
+    let pre_link_args_msvc = "/OPT:NOLBR".to_string();
+    base.pre_link_args.get_mut(&LinkerFlavor::Msvc).unwrap().push(pre_link_args_msvc.clone());
+    base.pre_link_args
+        .get_mut(&LinkerFlavor::Lld(LldFlavor::Link))
+        .unwrap()
+        .push(pre_link_args_msvc);
 
     // FIXME(jordanrh): use PanicStrategy::Unwind when SEH is
     // implemented for windows/arm in LLVM
@@ -22,7 +26,7 @@ pub fn target() -> TargetResult {
         target_endian: "little".to_string(),
         target_pointer_width: "32".to_string(),
         target_c_int_width: "32".to_string(),
-        data_layout: "e-m:w-p:32:32-i64:64-v128:64:128-a:0:32-n32-S64".to_string(),
+        data_layout: "e-m:w-p:32:32-Fi8-i64:64-v128:64:128-a:0:32-n32-S64".to_string(),
         arch: "arm".to_string(),
         target_os: "windows".to_string(),
         target_env: "msvc".to_string(),
@@ -34,7 +38,7 @@ pub fn target() -> TargetResult {
             cpu: "generic".to_string(),
             max_atomic_width: Some(64),
             abi_blacklist: super::arm_base::abi_blacklist(),
-            .. base
-        }
+            ..base
+        },
     })
 }

@@ -1,4 +1,4 @@
-// compile-pass
+// check-pass
 pub trait Reader {}
 
 enum Wrapper<'a> {

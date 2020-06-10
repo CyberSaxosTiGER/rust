@@ -1,4 +1,4 @@
-// compile-pass
+// check-pass
 
 // Bastion of the Turbofish
 // ------------------------

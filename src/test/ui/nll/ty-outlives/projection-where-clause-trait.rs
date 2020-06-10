@@ -4,7 +4,7 @@
 // MyTrait<'a>>::Output: 'a` outlives `'a` (because the trait says
 // so).
 //
-// compile-pass
+// check-pass
 
 trait MyTrait<'a> {
     type Output: 'a;

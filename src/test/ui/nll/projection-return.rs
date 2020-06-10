@@ -1,5 +1,5 @@
 // compile-flags:-Zborrowck=mir
-// compile-pass
+// check-pass
 
 #![feature(rustc_attrs)]
 

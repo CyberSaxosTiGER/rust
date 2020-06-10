@@ -1,4 +1,4 @@
-// compile-pass
+// check-pass
 #![allow(dead_code)]
 // Test that methods in trait impls should override default methods.
 

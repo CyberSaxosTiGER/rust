@@ -1,4 +1,4 @@
-use core::ops::{Range, RangeFull, RangeFrom, RangeTo, RangeInclusive};
+use core::ops::{Bound, Range, RangeFrom, RangeFull, RangeInclusive, RangeTo};
 
 // Test the Range structs without the syntactic sugar.
 
@@ -59,26 +59,38 @@ fn test_range_inclusive() {
     assert_eq!(r.next(), None);
 }
 
-
 #[test]
 fn test_range_is_empty() {
-    use core::f32::*;
+    assert!(!(0.0..10.0).is_empty());
+    assert!((-0.0..0.0).is_empty());
+    assert!((10.0..0.0).is_empty());
 
-    assert!(!(0.0 .. 10.0).is_empty());
-    assert!( (-0.0 .. 0.0).is_empty());
-    assert!( (10.0 .. 0.0).is_empty());
+    assert!(!(f32::NEG_INFINITY..f32::INFINITY).is_empty());
+    assert!((f32::EPSILON..f32::NAN).is_empty());
+    assert!((f32::NAN..f32::EPSILON).is_empty());
+    assert!((f32::NAN..f32::NAN).is_empty());
 
-    assert!(!(NEG_INFINITY .. INFINITY).is_empty());
-    assert!( (EPSILON .. NAN).is_empty());
-    assert!( (NAN .. EPSILON).is_empty());
-    assert!( (NAN .. NAN).is_empty());
+    assert!(!(0.0..=10.0).is_empty());
+    assert!(!(-0.0..=0.0).is_empty());
+    assert!((10.0..=0.0).is_empty());
 
-    assert!(!(0.0 ..= 10.0).is_empty());
-    assert!(!(-0.0 ..= 0.0).is_empty());
-    assert!( (10.0 ..= 0.0).is_empty());
+    assert!(!(f32::NEG_INFINITY..=f32::INFINITY).is_empty());
+    assert!((f32::EPSILON..=f32::NAN).is_empty());
+    assert!((f32::NAN..=f32::EPSILON).is_empty());
+    assert!((f32::NAN..=f32::NAN).is_empty());
+}
 
-    assert!(!(NEG_INFINITY ..= INFINITY).is_empty());
-    assert!( (EPSILON ..= NAN).is_empty());
-    assert!( (NAN ..= EPSILON).is_empty());
-    assert!( (NAN ..= NAN).is_empty());
+#[test]
+fn test_bound_cloned_unbounded() {
+    assert_eq!(Bound::<&u32>::Unbounded.cloned(), Bound::Unbounded);
+}
+
+#[test]
+fn test_bound_cloned_included() {
+    assert_eq!(Bound::Included(&3).cloned(), Bound::Included(3));
+}
+
+#[test]
+fn test_bound_cloned_excluded() {
+    assert_eq!(Bound::Excluded(&3).cloned(), Bound::Excluded(3));
 }

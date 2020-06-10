@@ -1,4 +1,4 @@
-// compile-pass
+// check-pass
 #![warn(const_err)]
 
 pub const Z: u32 = 0 - 1;

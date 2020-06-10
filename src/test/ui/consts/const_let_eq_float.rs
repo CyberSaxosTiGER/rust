@@ -1,4 +1,4 @@
-// compile-pass
+// build-pass (FIXME(62277): could be check-pass?)
 
 #![feature(const_fn)]
 
@@ -7,6 +7,7 @@ struct Bar<T> { x: T }
 struct W(f32);
 struct A { a: f32 }
 
+#[allow(redundant_semicolons)]
 const fn basics((a,): (f32,)) -> f32 {
     // Deferred assignment:
     let b: f32;

@@ -1,14 +1,11 @@
 //! Table-of-contents creation.
 
-use std::fmt;
-use std::string::String;
-
 /// A (recursive) table of contents
-#[derive(PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct Toc {
     /// The levels are strictly decreasing, i.e.
     ///
-    /// entries[0].level >= entries[1].level >= ...
+    /// `entries[0].level >= entries[1].level >= ...`
     ///
     /// Normally they are equal, but can differ in cases like A and B,
     /// both of which end up in the same `Toc` as they have the same
@@ -19,7 +16,7 @@ pub struct Toc {
     /// ### A
     /// ## B
     /// ```
-    entries: Vec<TocEntry>
+    entries: Vec<TocEntry>,
 }
 
 impl Toc {
@@ -28,7 +25,7 @@ impl Toc {
     }
 }
 
-#[derive(PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct TocEntry {
     level: u32,
     sec_number: String,
@@ -42,21 +39,20 @@ pub struct TocEntry {
 pub struct TocBuilder {
     top_level: Toc,
     /// The current hierarchy of parent headings, the levels are
-    /// strictly increasing (i.e., chain[0].level < chain[1].level <
-    /// ...) with each entry being the most recent occurrence of a
+    /// strictly increasing (i.e., `chain[0].level < chain[1].level <
+    /// ...`) with each entry being the most recent occurrence of a
     /// heading with that level (it doesn't include the most recent
     /// occurrences of every level, just, if it *is* in `chain` then
     /// it is the most recent one).
     ///
     /// We also have `chain[0].level <= top_level.entries[last]`.
-    chain: Vec<TocEntry>
+    chain: Vec<TocEntry>,
 }
 
 impl TocBuilder {
     pub fn new() -> TocBuilder {
         TocBuilder { top_level: Toc { entries: Vec::new() }, chain: Vec::new() }
     }
-
 
     /// Converts into a true `Toc` struct.
     pub fn into_toc(mut self) -> Toc {
@@ -98,19 +94,19 @@ impl TocBuilder {
         loop {
             match self.chain.pop() {
                 Some(mut next) => {
-                    this.map(|e| next.children.entries.push(e));
+                    next.children.entries.extend(this);
                     if next.level < level {
                         // this is the parent we want, so return it to
                         // its rightful place.
                         self.chain.push(next);
-                        return
+                        return;
                     } else {
                         this = Some(next);
                     }
                 }
                 None => {
-                    this.map(|e| self.top_level.entries.push(e));
-                    return
+                    self.top_level.entries.extend(this);
+                    return;
                 }
             }
         }
@@ -119,7 +115,7 @@ impl TocBuilder {
     /// Push a level `level` heading into the appropriate place in the
     /// hierarchy, returning a string containing the section number in
     /// `<num>.<num>.<num>` format.
-    pub fn push<'a>(&'a mut self, level: u32, name: String, id: String) -> &'a str {
+    pub fn push(&mut self, level: u32, name: String, id: String) -> &str {
         assert!(level >= 1);
 
         // collapse all previous sections into their parents until we
@@ -155,7 +151,7 @@ impl TocBuilder {
             name,
             sec_number,
             id,
-            children: Toc { entries: Vec::new() }
+            children: Toc { entries: Vec::new() },
         });
 
         // get the thing we just pushed, so we can borrow the string
@@ -165,108 +161,28 @@ impl TocBuilder {
     }
 }
 
-impl fmt::Debug for Toc {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Display::fmt(self, f)
-    }
-}
-
-impl fmt::Display for Toc {
-    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(fmt, "<ul>")?;
+impl Toc {
+    fn print_inner(&self, v: &mut String) {
+        v.push_str("<ul>");
         for entry in &self.entries {
-            // recursively format this table of contents (the
-            // `{children}` is the key).
-            write!(fmt,
-                   "\n<li><a href=\"#{id}\">{num} {name}</a>{children}</li>",
-                   id = entry.id,
-                   num = entry.sec_number, name = entry.name,
-                   children = entry.children)?
+            // recursively format this table of contents
+            v.push_str(&format!(
+                "\n<li><a href=\"#{id}\">{num} {name}</a>",
+                id = entry.id,
+                num = entry.sec_number,
+                name = entry.name
+            ));
+            entry.children.print_inner(&mut *v);
+            v.push_str("</li>");
         }
-        write!(fmt, "</ul>")
+        v.push_str("</ul>");
+    }
+    crate fn print(&self) -> String {
+        let mut v = String::new();
+        self.print_inner(&mut v);
+        v
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{TocBuilder, Toc, TocEntry};
-
-    #[test]
-    fn builder_smoke() {
-        let mut builder = TocBuilder::new();
-
-        // this is purposely not using a fancy macro like below so
-        // that we're sure that this is doing the correct thing, and
-        // there's been no macro mistake.
-        macro_rules! push {
-            ($level: expr, $name: expr) => {
-                assert_eq!(builder.push($level,
-                                        $name.to_string(),
-                                        "".to_string()),
-                           $name);
-            }
-        }
-        push!(2, "0.1");
-        push!(1, "1");
-        {
-            push!(2, "1.1");
-            {
-                push!(3, "1.1.1");
-                push!(3, "1.1.2");
-            }
-            push!(2, "1.2");
-            {
-                push!(3, "1.2.1");
-                push!(3, "1.2.2");
-            }
-        }
-        push!(1, "2");
-        push!(1, "3");
-        {
-            push!(4, "3.0.0.1");
-            {
-                push!(6, "3.0.0.1.0.1");
-            }
-            push!(4, "3.0.0.2");
-            push!(2, "3.1");
-            {
-                push!(4, "3.1.0.1");
-            }
-        }
-
-        macro_rules! toc {
-            ($(($level: expr, $name: expr, $(($sub: tt))* )),*) => {
-                Toc {
-                    entries: vec![
-                        $(
-                            TocEntry {
-                                level: $level,
-                                name: $name.to_string(),
-                                sec_number: $name.to_string(),
-                                id: "".to_string(),
-                                children: toc!($($sub),*)
-                            }
-                            ),*
-                        ]
-                }
-            }
-        }
-        let expected = toc!(
-            (2, "0.1", ),
-
-            (1, "1",
-             ((2, "1.1", ((3, "1.1.1", )) ((3, "1.1.2", ))))
-             ((2, "1.2", ((3, "1.2.1", )) ((3, "1.2.2", ))))
-             ),
-
-            (1, "2", ),
-
-            (1, "3",
-             ((4, "3.0.0.1", ((6, "3.0.0.1.0.1", ))))
-             ((4, "3.0.0.2", ))
-             ((2, "3.1", ((4, "3.1.0.1", ))))
-             )
-            );
-        assert_eq!(expected, builder.into_toc());
-    }
-}
+mod tests;

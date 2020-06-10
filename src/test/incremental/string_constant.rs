@@ -1,6 +1,6 @@
 // revisions: cfail1 cfail2
 // compile-flags: -Z query-dep-graph
-// compile-pass
+// build-pass (FIXME(62277): could be check-pass?)
 
 #![allow(warnings)]
 #![feature(rustc_attrs)]
@@ -18,7 +18,7 @@ pub mod x {
     }
 
     #[cfg(cfail2)]
-    #[rustc_dirty(label="HirBody", cfg="cfail2")]
+    #[rustc_dirty(label="hir_owner_nodes", cfg="cfail2")]
     #[rustc_dirty(label="optimized_mir", cfg="cfail2")]
     pub fn x() {
         println!("{}", "2");

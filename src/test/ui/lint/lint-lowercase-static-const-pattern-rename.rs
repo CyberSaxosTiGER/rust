@@ -1,4 +1,4 @@
-// compile-pass
+// check-pass
 // Issue #7526: lowercase static constants in patterns look like bindings
 
 // This is similar to lint-lowercase-static-const-pattern.rs, except it

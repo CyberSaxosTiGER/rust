@@ -1,4 +1,4 @@
-// compile-pass
+// check-pass
 
 // Test that we can handle newtypes wrapping extern types
 

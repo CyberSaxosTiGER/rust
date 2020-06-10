@@ -2,7 +2,7 @@
 // should also deal with the edge cases where a label is shadowed,
 // within nested loops
 
-// compile-pass
+// check-pass
 
 #![feature(label_break_value)]
 #![warn(unused_labels)]

@@ -4,7 +4,7 @@
 //
 // Regression test for #53121.
 //
-// compile-pass
+// check-pass
 
 trait MyTrait<'a> {
     type Output;

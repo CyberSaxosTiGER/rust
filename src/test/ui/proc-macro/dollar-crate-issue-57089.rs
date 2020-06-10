@@ -1,4 +1,4 @@
-// compile-pass
+// check-pass
 // edition:2018
 // aux-build:test-macros.rs
 

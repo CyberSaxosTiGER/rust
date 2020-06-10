@@ -1,17 +1,15 @@
+// check-pass
 // ignore-emscripten
-// compile-pass
-// skip-codegen
-#![feature(asm)]
+
+#![feature(llvm_asm)]
 
 macro_rules! interrupt_handler {
     () => {
         unsafe fn _interrupt_handler() {
-            asm!("pop  eax" :::: "intel");
+            llvm_asm!("pop  eax" :::: "intel");
         }
     }
 }
 interrupt_handler!{}
 
-
-fn main() {
-}
+fn main() {}

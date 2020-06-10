@@ -4,10 +4,9 @@ use std::fs;
 use std::path::Path;
 
 pub fn check(path: &Path, bad: &mut bool) {
-    super::walk_many(
-        &[&path.join("test/ui"), &path.join("test/ui-fulldeps")],
-        &mut |_| false,
-        &mut |file_path| {
+    for path in &[&path.join("test/ui"), &path.join("test/ui-fulldeps")] {
+        super::walk_no_read(path, &mut |_| false, &mut |entry| {
+            let file_path = entry.path();
             if let Some(ext) = file_path.extension() {
                 if ext == "stderr" || ext == "stdout" {
                     // Test output filenames have one of the formats:
@@ -28,11 +27,7 @@ pub fn check(path: &Path, bad: &mut bool) {
                         .splitn(2, '.')
                         .next()
                         .unwrap();
-                    if !file_path
-                        .with_file_name(testname)
-                        .with_extension("rs")
-                        .exists()
-                    {
+                    if !file_path.with_file_name(testname).with_extension("rs").exists() {
                         println!("Stray file with UI testing output: {:?}", file_path);
                         *bad = true;
                     }
@@ -45,6 +40,6 @@ pub fn check(path: &Path, bad: &mut bool) {
                     }
                 }
             }
-        },
-    );
+        });
+    }
 }

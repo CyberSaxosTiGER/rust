@@ -51,8 +51,8 @@
 /// ```
 #[lang = "index"]
 #[rustc_on_unimplemented(
-    message="the type `{Self}` cannot be indexed by `{Idx}`",
-    label="`{Self}` cannot be indexed by `{Idx}`",
+    message = "the type `{Self}` cannot be indexed by `{Idx}`",
+    label = "`{Self}` cannot be indexed by `{Idx}`"
 )]
 #[stable(feature = "rust1", since = "1.0.0")]
 #[doc(alias = "]")]
@@ -65,6 +65,7 @@ pub trait Index<Idx: ?Sized> {
 
     /// Performs the indexing (`container[index]`) operation.
     #[stable(feature = "rust1", since = "1.0.0")]
+    #[track_caller]
     fn index(&self, index: Idx) -> &Self::Output;
 }
 
@@ -105,7 +106,7 @@ pub trait Index<Idx: ?Sized> {
 /// impl Index<Side> for Balance {
 ///     type Output = Weight;
 ///
-///     fn index<'a>(&'a self, index: Side) -> &'a Self::Output {
+///     fn index(&self, index: Side) -> &Self::Output {
 ///         println!("Accessing {:?}-side of balance immutably", index);
 ///         match index {
 ///             Side::Left => &self.left,
@@ -115,7 +116,7 @@ pub trait Index<Idx: ?Sized> {
 /// }
 ///
 /// impl IndexMut<Side> for Balance {
-///     fn index_mut<'a>(&'a mut self, index: Side) -> &'a mut Self::Output {
+///     fn index_mut(&mut self, index: Side) -> &mut Self::Output {
 ///         println!("Accessing {:?}-side of balance mutably", index);
 ///         match index {
 ///             Side::Left => &mut self.left,
@@ -142,22 +143,22 @@ pub trait Index<Idx: ?Sized> {
 #[lang = "index_mut"]
 #[rustc_on_unimplemented(
     on(
-        _Self="&str",
-        note="you can use `.chars().nth()` or `.bytes().nth()`
+        _Self = "&str",
+        note = "you can use `.chars().nth()` or `.bytes().nth()`
 see chapter in The Book <https://doc.rust-lang.org/book/ch08-02-strings.html#indexing-into-strings>"
     ),
     on(
-        _Self="str",
-        note="you can use `.chars().nth()` or `.bytes().nth()`
+        _Self = "str",
+        note = "you can use `.chars().nth()` or `.bytes().nth()`
 see chapter in The Book <https://doc.rust-lang.org/book/ch08-02-strings.html#indexing-into-strings>"
     ),
     on(
-        _Self="std::string::String",
-        note="you can use `.chars().nth()` or `.bytes().nth()`
+        _Self = "std::string::String",
+        note = "you can use `.chars().nth()` or `.bytes().nth()`
 see chapter in The Book <https://doc.rust-lang.org/book/ch08-02-strings.html#indexing-into-strings>"
     ),
-    message="the type `{Self}` cannot be mutably indexed by `{Idx}`",
-    label="`{Self}` cannot be mutably indexed by `{Idx}`",
+    message = "the type `{Self}` cannot be mutably indexed by `{Idx}`",
+    label = "`{Self}` cannot be mutably indexed by `{Idx}`"
 )]
 #[stable(feature = "rust1", since = "1.0.0")]
 #[doc(alias = "[")]
@@ -166,5 +167,6 @@ see chapter in The Book <https://doc.rust-lang.org/book/ch08-02-strings.html#ind
 pub trait IndexMut<Idx: ?Sized>: Index<Idx> {
     /// Performs the mutable indexing (`container[index]`) operation.
     #[stable(feature = "rust1", since = "1.0.0")]
+    #[track_caller]
     fn index_mut(&mut self, index: Idx) -> &mut Self::Output;
 }

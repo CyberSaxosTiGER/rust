@@ -1,10 +1,10 @@
 use rustc_data_structures::fx::FxHashSet;
 use std::env;
-use std::path::{Path, PathBuf};
 use std::fs;
+use std::path::{Path, PathBuf};
 
-use rustc::hir::def_id::CrateNum;
-use rustc::middle::cstore::LibSource;
+use rustc_hir::def_id::CrateNum;
+use rustc_middle::middle::cstore::LibSource;
 
 pub struct RPathConfig<'a> {
     pub used_crates: &'a [(CrateNum, LibSource)],
@@ -81,23 +81,16 @@ fn get_rpaths(config: &mut RPathConfig<'_>, libs: &[PathBuf]) -> Vec<String> {
     rpaths.extend_from_slice(&fallback_rpaths);
 
     // Remove duplicates
-    let rpaths = minimize_rpaths(&rpaths);
-
-    rpaths
+    minimize_rpaths(&rpaths)
 }
 
-fn get_rpaths_relative_to_output(config: &mut RPathConfig<'_>,
-                                 libs: &[PathBuf]) -> Vec<String> {
+fn get_rpaths_relative_to_output(config: &mut RPathConfig<'_>, libs: &[PathBuf]) -> Vec<String> {
     libs.iter().map(|a| get_rpath_relative_to_output(config, a)).collect()
 }
 
 fn get_rpath_relative_to_output(config: &mut RPathConfig<'_>, lib: &Path) -> String {
     // Mac doesn't appear to support $ORIGIN
-    let prefix = if config.is_like_osx {
-        "@loader_path"
-    } else {
-        "$ORIGIN"
-    };
+    let prefix = if config.is_like_osx { "@loader_path" } else { "$ORIGIN" };
 
     let cwd = env::current_dir().unwrap();
     let mut lib = fs::canonicalize(&cwd.join(lib)).unwrap_or_else(|_| cwd.join(lib));
@@ -105,8 +98,8 @@ fn get_rpath_relative_to_output(config: &mut RPathConfig<'_>, lib: &Path) -> Str
     let mut output = cwd.join(&config.out_filename);
     output.pop(); // strip filename
     let output = fs::canonicalize(&output).unwrap_or(output);
-    let relative = path_relative_from(&lib, &output).unwrap_or_else(||
-        panic!("couldn't create relative path from {:?} to {:?}", output, lib));
+    let relative = path_relative_from(&lib, &output)
+        .unwrap_or_else(|| panic!("couldn't create relative path from {:?} to {:?}", output, lib));
     // FIXME (#9639): This needs to handle non-utf8 paths
     format!("{}/{}", prefix, relative.to_str().expect("non-utf8 component in path"))
 }
@@ -119,11 +112,7 @@ fn path_relative_from(path: &Path, base: &Path) -> Option<PathBuf> {
     use std::path::Component;
 
     if path.is_absolute() != base.is_absolute() {
-        if path.is_absolute() {
-            Some(PathBuf::from(path))
-        } else {
-            None
-        }
+        path.is_absolute().then(|| PathBuf::from(path))
     } else {
         let mut ita = path.components();
         let mut itb = base.components();
@@ -153,7 +142,6 @@ fn path_relative_from(path: &Path, base: &Path) -> Option<PathBuf> {
     }
 }
 
-
 fn get_install_prefix_rpath(config: &mut RPathConfig<'_>) -> String {
     let path = (config.get_install_prefix_lib_path)();
     let path = env::current_dir().unwrap().join(&path);
@@ -173,98 +161,4 @@ fn minimize_rpaths(rpaths: &[String]) -> Vec<String> {
 }
 
 #[cfg(all(unix, test))]
-mod tests {
-    use super::{RPathConfig};
-    use super::{minimize_rpaths, rpaths_to_flags, get_rpath_relative_to_output};
-    use std::path::{Path, PathBuf};
-
-    #[test]
-    fn test_rpaths_to_flags() {
-        let flags = rpaths_to_flags(&[
-            "path1".to_string(),
-            "path2".to_string()
-        ]);
-        assert_eq!(flags,
-                   ["-Wl,-rpath,path1",
-                    "-Wl,-rpath,path2"]);
-    }
-
-    #[test]
-    fn test_minimize1() {
-        let res = minimize_rpaths(&[
-            "rpath1".to_string(),
-            "rpath2".to_string(),
-            "rpath1".to_string()
-        ]);
-        assert!(res == [
-            "rpath1",
-            "rpath2",
-        ]);
-    }
-
-    #[test]
-    fn test_minimize2() {
-        let res = minimize_rpaths(&[
-            "1a".to_string(),
-            "2".to_string(),
-            "2".to_string(),
-            "1a".to_string(),
-            "4a".to_string(),
-            "1a".to_string(),
-            "2".to_string(),
-            "3".to_string(),
-            "4a".to_string(),
-            "3".to_string()
-        ]);
-        assert!(res == [
-            "1a",
-            "2",
-            "4a",
-            "3",
-        ]);
-    }
-
-    #[test]
-    fn test_rpath_relative() {
-        if cfg!(target_os = "macos") {
-            let config = &mut RPathConfig {
-                used_crates: Vec::new(),
-                has_rpath: true,
-                is_like_osx: true,
-                linker_is_gnu: false,
-                out_filename: PathBuf::from("bin/rustc"),
-                get_install_prefix_lib_path: &mut || panic!(),
-            };
-            let res = get_rpath_relative_to_output(config,
-                                                   Path::new("lib/libstd.so"));
-            assert_eq!(res, "@loader_path/../lib");
-        } else {
-            let config = &mut RPathConfig {
-                used_crates: Vec::new(),
-                out_filename: PathBuf::from("bin/rustc"),
-                get_install_prefix_lib_path: &mut || panic!(),
-                has_rpath: true,
-                is_like_osx: false,
-                linker_is_gnu: true,
-            };
-            let res = get_rpath_relative_to_output(config,
-                                                   Path::new("lib/libstd.so"));
-            assert_eq!(res, "$ORIGIN/../lib");
-        }
-    }
-
-    #[test]
-    fn test_xlinker() {
-        let args = rpaths_to_flags(&[
-            "a/normal/path".to_string(),
-            "a,comma,path".to_string()
-        ]);
-
-        assert_eq!(args, vec![
-            "-Wl,-rpath,a/normal/path".to_string(),
-            "-Wl,-rpath".to_string(),
-            "-Xlinker".to_string(),
-            "a,comma,path".to_string()
-        ]);
-    }
-}
+mod tests;

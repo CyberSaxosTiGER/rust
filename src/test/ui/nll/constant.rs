@@ -2,7 +2,7 @@
 // arbitrary types without ICEs.
 
 // compile-flags:-Zborrowck=mir
-// compile-pass
+// check-pass
 
 const HI: &str = "hi";
 

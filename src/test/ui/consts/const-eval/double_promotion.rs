@@ -1,4 +1,4 @@
-// compile-pass
+// check-pass
 
 #![feature(const_fn, rustc_attrs)]
 

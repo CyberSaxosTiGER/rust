@@ -1,4 +1,4 @@
-// compile-pass
+// check-pass
 // run-rustfix
 
 #![warn(ellipsis_inclusive_range_patterns)]

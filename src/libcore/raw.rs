@@ -6,17 +6,18 @@
 //! They can be used as targets of transmutes in unsafe code for manipulating
 //! the raw representations directly.
 //!
-//! Their definition should always match the ABI defined in `rustc::back::abi`.
+//! Their definition should always match the ABI defined in
+//! `rustc_middle::ty::layout`.
 
-/// The representation of a trait object like `&SomeTrait`.
+/// The representation of a trait object like `&dyn SomeTrait`.
 ///
-/// This struct has the same layout as types like `&SomeTrait` and
+/// This struct has the same layout as types like `&dyn SomeTrait` and
 /// `Box<dyn AnotherTrait>`.
 ///
 /// `TraitObject` is guaranteed to match layouts, but it is not the
 /// type of trait objects (e.g., the fields are not directly accessible
-/// on a `&SomeTrait`) nor does it control that layout (changing the
-/// definition will not change the layout of a `&SomeTrait`). It is
+/// on a `&dyn SomeTrait`) nor does it control that layout (changing the
+/// definition will not change the layout of a `&dyn SomeTrait`). It is
 /// only designed to be used by unsafe code that needs to manipulate
 /// the low-level details.
 ///
@@ -53,7 +54,7 @@
 /// let value: i32 = 123;
 ///
 /// // let the compiler make a trait object
-/// let object: &Foo = &value;
+/// let object: &dyn Foo = &value;
 ///
 /// // look at the raw representation
 /// let raw_object: raw::TraitObject = unsafe { mem::transmute(object) };
@@ -65,7 +66,7 @@
 ///
 /// // construct a new object, pointing to a different `i32`, being
 /// // careful to use the `i32` vtable from `object`
-/// let synthesized: &Foo = unsafe {
+/// let synthesized: &dyn Foo = unsafe {
 ///      mem::transmute(raw::TraitObject {
 ///          data: &other_value as *const _ as *mut (),
 ///          vtable: raw_object.vtable,

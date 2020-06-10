@@ -1,4 +1,4 @@
-// compile-pass
+// check-pass
 // compile-flags: -Wunused
 
 // make sure write!() can't hide its unused Result

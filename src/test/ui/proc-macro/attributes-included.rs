@@ -1,5 +1,5 @@
 // aux-build:attributes-included.rs
-// compile-pass
+// check-pass
 
 #![warn(unused)]
 
